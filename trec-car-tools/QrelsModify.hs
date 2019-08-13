@@ -5,13 +5,9 @@
 {-# LANGUAGE OverloadedStrings #-}
 
 
-import Data.Monoid
 import Options.Applicative
 import Control.Monad
-import Control.DeepSeq
 import Data.Maybe
-import Data.Hashable
-import Codec.Serialise as CBOR
 import qualified Data.Text as T
 
 import CAR.Types
@@ -21,11 +17,6 @@ import CAR.TocFile as TocFile
 
 import qualified Data.HashMap.Strict as HM
 import qualified Data.HashSet as HS
-
-
-
-import SimplIR.Format.TrecRunFile as TrecRunFile
-import CAR.AnnotationsFile as AnnsFile
 
 import Debug.Trace
 

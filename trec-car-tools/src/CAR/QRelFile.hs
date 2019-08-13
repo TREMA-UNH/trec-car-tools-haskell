@@ -12,7 +12,7 @@ module CAR.QRelFile
   , readParagraphQRel, writeParagraphQRel
   )  where
 
-import Data.Semigroup
+--import Data.Semigroup
 import qualified Data.Text as T
 
 import CAR.Types
