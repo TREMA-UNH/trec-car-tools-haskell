@@ -30,6 +30,7 @@ opts = subparser
     <> cmd "page-ids"      dumpPageIds
     <> cmd "meta"          dumpMeta
     <> cmd "pages"         dumpPages
+    <> cmd "pages-corpus"  dumpPagesCorpus
     <> cmd "entityids"     dumpEntityIds
     <> cmd "paragraphs"    dumpParagraphs
     <> cmd "paragraph-corpus" dumpParagraphCorpus
@@ -117,6 +118,21 @@ opts = subparser
         f getPages linkStyle = do
             pages <- getPages
             putStrLn $ unlines $ map (prettyPage linkStyle) pages
+
+    dumpPagesCorpus =
+        f <$> pagesFromFile
+      where
+        f :: IO [Page] -> IO ()
+        f getPages = do
+            pages <- getPages
+            mapM_ dumpPage pages
+          where
+            dumpPage :: Page -> IO ()
+            dumpPage page =
+                TL.writeFile fname $ TL.unlines $ map paraToText (pageParas page)
+              where
+                fname = unpackPageName $ pageName page
+
 
     dumpMeta =
         f <$> pagesFromFile
