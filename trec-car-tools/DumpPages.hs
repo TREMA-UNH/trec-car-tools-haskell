@@ -1,4 +1,5 @@
 {-# LANGUAGE MultiWayIf #-}
+{-# LANGUAGE OverloadedStrings #-}
 
 import Control.Monad
 import Data.List (intersperse)
@@ -9,6 +10,7 @@ import qualified Data.HashMap.Strict as HM
 import qualified Data.HashSet as HS
 import qualified Data.Text as T
 import qualified Data.Text.IO as T
+import qualified Data.Text.Lazy as TL
 import qualified Data.Text.Lazy.IO as TL
 import qualified Data.Text.Lazy.Builder as TB
 import qualified Data.Text.Lazy.Builder.Int as TB
@@ -30,6 +32,7 @@ opts = subparser
     <> cmd "pages"         dumpPages
     <> cmd "entityids"     dumpEntityIds
     <> cmd "paragraphs"    dumpParagraphs
+    <> cmd "paragraph-corpus" dumpParagraphCorpus
     <> cmd "paragraphids"  dumpParagraphIds
     <> cmd "filter-paragraphids"  filterParagraphIds
     <> cmd "paragraphids-pages"  paragraphIdsInPages
@@ -162,6 +165,14 @@ opts = subparser
                       return $ mapMaybe (`TocFile.lookup` paras) paraIds
             putStrLn $ unlines $ map (prettyParagraph linkStyle) paragraphs
 
+    dumpParagraphCorpus =
+        f <$> argument str (help "input paragraph file" <> metavar "FILE")
+      where
+        f :: FilePath -> IO ()
+        f inputFile = do
+            paragraphs <- readParagraphsFile inputFile
+            let fmtPara para = TL.pack (unpackParagraphId $ paraId para) <> "\t" <> paraToText para
+            TL.putStrLn $ TL.unlines $ map fmtPara paragraphs
 
     dumpParagraphIds =
         f <$> argument str (help "input paragraph file" <> metavar "FILE")
