@@ -42,6 +42,7 @@ opts = subparser
     <> cmd "hist-headings" histogramHeadings
     <> cmd "dump-header"   dumpHeader
     <> cmd "provenance"   dumpHeader
+    <> cmd "queries"  dumpQueries
   where
     cmd name action = command name (info (helper <*> action) fullDesc)
     dumpHeader =
@@ -81,6 +82,32 @@ opts = subparser
                 mapM_  (\p -> putStrLn $ unlines $ sectionpathlist p) pages
             else
                 mapM_ (\p -> putStrLn $ unlines $ pageNameStr p : sectionpathlist p) pages
+
+    dumpQueries =
+        f <$> pagesFromFile
+          <*> flag False True (long "section" <> help "enable for section queries (otherwise page queries)")
+      where
+        f getPages useSection = do
+            pages <- getPages
+            if useSection then
+              mapM_ (\p -> putStrLn $ unlines $ sectionQueries p ) pages
+            else
+              mapM_ (\p -> putStrLn $ pageQueries p) pages 
+
+        pageQueries :: Page -> String
+        pageQueries page =
+          let qid = unpackPageId $ pageId page
+              qtext = unpackPageName $ pageName page
+          in qid <> "\t" <> qtext    
+
+        sectionQueries :: Page -> [String]
+        sectionQueries page  = 
+          [ escapeSectionPath sectionPath <> "\t"
+            <> (unpackPageName $ pageName page) 
+            <> " " <> T.unpack (T.intercalate " " (fmap getSectionHeading headingList) )
+          | (sectionPath, headingList, _) <- pageSections page
+          ]
+
 
     dumpOutlines =
         f <$> pagesFromFile
