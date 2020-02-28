@@ -13,7 +13,7 @@ module CAR.NameToIdMap
     , NameToIdMap
     ) where
 
-import qualified Data.Map as M
+import qualified Data.Map.Strict as M
 import qualified Data.Set as S
 import CAR.Types.Files
 import CAR.Types
