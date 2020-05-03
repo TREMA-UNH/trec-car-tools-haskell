@@ -8,7 +8,6 @@ author:              Ben Gamari
 maintainer:          ben@smart-cactus.org
 copyright:           (c) 2017 Ben Gamari and Laura Dietz
 build-type:          Simple
-extra-source-files:  ChangeLog.md
 cabal-version:       >=1.10
 
 library
