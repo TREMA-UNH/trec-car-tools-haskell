@@ -20,22 +20,10 @@ let
       trecCarPackages = {
         trec-car-types       = dontCheck (self.callCabal2nix "trec-car-types" (localDir ./trec-car-types) {});
         trec-car-tools       = dontCheck (self.callCabal2nix "trec-car-tools" (localDir ./trec-car-tools) {});
-
-        hpc-coveralls = self.callCabal2nix "hpc-coveralls" (nixpkgs.fetchFromGitHub {
-          owner = "bgamari";
-          repo = "hpc-coveralls";
-          rev = "a2d500316fecb8ee49c034e2781862c8606b96af";
-          sha256 = "17d3ljibsdsxbsqrdjx6rn0ww8ck0lycp2pwfh71ilvwbm5wlbyb";
-        }) {};
-
-        servant = self.callHackage "servant" "0.16" {};
-        servant-client = self.callHackage "servant-client" "0.16" {};
-        servant-client-core = self.callHackage "servant-client-core" "0.16" {};
-        servant-server = self.callHackage "servant-server" "0.16" {};
       };
     in trecCarPackages // { inherit trecCarPackages; };
 
-  haskellPackages = nixpkgs.haskell.packages.ghc864.override {
+  haskellPackages = nixpkgs.haskell.packages.ghc865.override {
     overrides = lib.composeExtensions simplirNix.haskellOverrides haskellOverrides;
   };
 in {

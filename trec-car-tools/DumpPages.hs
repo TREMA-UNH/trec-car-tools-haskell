@@ -1,4 +1,5 @@
 {-# LANGUAGE MultiWayIf #-}
+{-# LANGUAGE OverloadedStrings #-}
 
 import Control.Monad
 import Data.List (intersperse)
@@ -9,6 +10,7 @@ import qualified Data.HashMap.Strict as HM
 import qualified Data.HashSet as HS
 import qualified Data.Text as T
 import qualified Data.Text.IO as T
+import qualified Data.Text.Lazy as TL
 import qualified Data.Text.Lazy.IO as TL
 import qualified Data.Text.Lazy.Builder as TB
 import qualified Data.Text.Lazy.Builder.Int as TB
@@ -28,8 +30,10 @@ opts = subparser
     <> cmd "page-ids"      dumpPageIds
     <> cmd "meta"          dumpMeta
     <> cmd "pages"         dumpPages
+    <> cmd "pages-corpus"  dumpPagesCorpus
     <> cmd "entityids"     dumpEntityIds
     <> cmd "paragraphs"    dumpParagraphs
+    <> cmd "paragraph-corpus" dumpParagraphCorpus
     <> cmd "paragraphids"  dumpParagraphIds
     <> cmd "filter-paragraphids"  filterParagraphIds
     <> cmd "paragraphids-pages"  paragraphIdsInPages
@@ -38,6 +42,7 @@ opts = subparser
     <> cmd "hist-headings" histogramHeadings
     <> cmd "dump-header"   dumpHeader
     <> cmd "provenance"   dumpHeader
+    <> cmd "queries"  dumpQueries
   where
     cmd name action = command name (info (helper <*> action) fullDesc)
     dumpHeader =
@@ -78,6 +83,32 @@ opts = subparser
             else
                 mapM_ (\p -> putStrLn $ unlines $ pageNameStr p : sectionpathlist p) pages
 
+    dumpQueries =
+        f <$> pagesFromFile
+          <*> flag False True (long "section" <> help "enable for section queries (otherwise page queries)")
+      where
+        f getPages useSection = do
+            pages <- getPages
+            if useSection then
+              mapM_ (\p -> putStrLn $ unlines $ sectionQueries p ) pages
+            else
+              mapM_ (\p -> putStrLn $ pageQueries p) pages 
+
+        pageQueries :: Page -> String
+        pageQueries page =
+          let qid = unpackPageId $ pageId page
+              qtext = unpackPageName $ pageName page
+          in qid <> "\t" <> qtext    
+
+        sectionQueries :: Page -> [String]
+        sectionQueries page  = 
+          [ escapeSectionPath sectionPath <> "\t"
+            <> (unpackPageName $ pageName page) 
+            <> " " <> T.unpack (T.intercalate " " (fmap getSectionHeading headingList) )
+          | (sectionPath, headingList, _) <- pageSections page
+          ]
+
+
     dumpOutlines =
         f <$> pagesFromFile
           <*> flag False True (long "page-id" <> help "also print page id")
@@ -113,8 +144,22 @@ opts = subparser
         f :: IO [Page] -> LinkStyle -> IO ()
         f getPages linkStyle = do
             pages <- getPages
-            let printPage = putStrLn . prettyPage linkStyle
-            mapM_ printPage pages
+            putStrLn $ unlines $ map (prettyPage linkStyle) pages
+
+    dumpPagesCorpus =
+        f <$> pagesFromFile
+      where
+        f :: IO [Page] -> IO ()
+        f getPages = do
+            pages <- getPages
+            mapM_ dumpPage pages
+          where
+            dumpPage :: Page -> IO ()
+            dumpPage page =
+                TL.writeFile fname $ TL.unlines $ map paraToText (pageParas page)
+              where
+                fname = unpackPageName $ pageName page
+
 
     dumpMeta =
         f <$> pagesFromFile
@@ -122,8 +167,7 @@ opts = subparser
         f :: IO [Page] -> IO ()
         f getPages = do
             pages <- getPages
-            let printPage = putStrLn . prettyMeta
-            mapM_ printPage pages
+            putStrLn $ unlines $ map prettyMeta pages
 
     paragraphIdsInPages =
         f <$> pagesFromFile
@@ -131,12 +175,11 @@ opts = subparser
         f :: IO [Page] -> IO ()
         f getPages = do
             pages <- getPages
-            mapM_ printParagraphId pages
-          where
-                printParagraphId page = mapM_ printParagraphIdPara $ pageParas page
-
-                printParagraphIdPara (Paragraph paraId' _) = putStrLn $ unpackParagraphId paraId'
-
+            putStrLn $ unlines
+              [ unpackParagraphId paraId'
+              | page <- pages
+              , Paragraph paraId' _ <- pageParas page
+              ]
 
     dumpEntityIds =
         f <$> pagesFromFile
@@ -144,13 +187,13 @@ opts = subparser
         f :: IO [Page] -> IO ()
         f getPages = do
                 pages <- getPages
-                mapM_ printPage pages
+                putStrLn $ unlines $ map entityIdFromPage pages
 
-          where printPage = putStrLn . entityIdFromPage
-                entityIdFromPage page =
-                    let pname = unpackPageName $ pageName page
-                        pid = unpackPageId $ pageId page
-                    in pid <> "\t" <> pname
+          where
+            entityIdFromPage page =
+              let pname = unpackPageName $ pageName page
+                  pid = unpackPageId $ pageId page
+              in pid <> "\t" <> pname
 
     dumpParagraphs =
         f <$> argument str (help "input paragraph file" <> metavar "FILE")
@@ -163,9 +206,16 @@ opts = subparser
               then readParagraphsFile inputFile
               else do paras <- TocFile.open $ TocFile.IndexedCborPath inputFile
                       return $ mapMaybe (`TocFile.lookup` paras) paraIds
-            mapM_ printParagraph paragraphs
+            putStrLn $ unlines $ map (prettyParagraph linkStyle) paragraphs
 
-          where printParagraph = putStrLn . prettyParagraph linkStyle
+    dumpParagraphCorpus =
+        f <$> argument str (help "input paragraph file" <> metavar "FILE")
+      where
+        f :: FilePath -> IO ()
+        f inputFile = do
+            paragraphs <- readParagraphsFile inputFile
+            let fmtPara para = TL.pack (unpackParagraphId $ paraId para) <> "\t" <> paraToText para
+            TL.putStrLn $ TL.unlines $ map fmtPara paragraphs
 
     dumpParagraphIds =
         f <$> argument str (help "input paragraph file" <> metavar "FILE")
@@ -173,9 +223,7 @@ opts = subparser
         f :: FilePath -> IO ()
         f inputFile  = do
                 paragraphs <- readParagraphsFile inputFile
-                mapM_ printParagraphId paragraphs
-
-          where printParagraphId (Paragraph paraId' _) = putStrLn $ unpackParagraphId paraId'
+                putStrLn $ unlines $ map (unpackParagraphId . paraId) paragraphs
 
     filterParagraphIds =
         f <$> argument str (help "input paragraph file" <> metavar "FILE")
@@ -187,9 +235,7 @@ opts = subparser
                 paragraphs <- readParagraphsFile inputFile
                 para2 <- TocFile.open para2File
                 let paragraphs' = filter (\ (Paragraph pid _) ->  negate /= isJust (TocFile.lookup pid para2) ) paragraphs
-                mapM_ printParagraphId paragraphs'
-
-          where printParagraphId (Paragraph paraId' _) = putStrLn $ unpackParagraphId paraId'
+                putStrLn $ unlines $ map (unpackParagraphId . paraId) paragraphs'
 
     histogramHeadings =
         f <$> pagesFromFile
