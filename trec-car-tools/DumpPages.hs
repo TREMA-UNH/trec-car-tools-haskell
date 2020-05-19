@@ -23,6 +23,7 @@ import qualified CAR.AnnotationsFile as CAR
 import CAR.Types
 import CAR.Utils
 import CAR.ToolVersion
+import qualified CAR.Types as CAR
 
 opts :: Parser (IO ())
 opts = subparser
@@ -265,7 +266,18 @@ readFilteredPages pageNames pageIds pageBundle =
      in mapMaybe (CAR.bundleLookupPage pageBundle) ( S.toList  pageIds')
 
 pagesFromFile :: Parser (IO [Page])
-pagesFromFile =
+pagesFromFile = allPagesFromFile <|> filteredPagesFromFile
+
+allPagesFromFile :: Parser (IO [Page])
+allPagesFromFile =
+    f <$> argument str (help "input file" <> metavar "FILE")
+  where
+    f :: FilePath -> IO [Page]
+    f inputFile = do
+        CAR.readPagesFile inputFile
+
+filteredPagesFromFile :: Parser (IO [Page])
+filteredPagesFromFile =
     f <$> argument str (help "input file" <> metavar "FILE")
       <*> fmap S.fromList (many (option  (packPageName  <$> str) (short 'p' <> long "page" <> metavar "PAGE NAME" <> help "Page name to dump or nothing to dump all")))
       <*> fmap S.fromList (many (option  (packPageId  <$> str) (short 'P' <> long "pageid" <> metavar "PAGE ID " <> help "Page id to dump or nothing to dump all")))
