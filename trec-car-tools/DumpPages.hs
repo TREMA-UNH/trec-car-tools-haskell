@@ -174,15 +174,16 @@ opts = subparser
 
 
             infoboxToText :: PageSkeleton -> TL.Text
-            infoboxToText (Infobox  title keyValues) =
-                TL.concat $ (TL.fromStrict title) : (fmap toText keyValues)
+            infoboxToText (Infobox  title keyValues) = TL.unlines $
+                [ "[" <> TL.fromStrict title  <> "]" ] 
+                ++ fmap toText keyValues
               where toText :: (T.Text, [PageSkeleton]) -> TL.Text
                     toText (key, skels) = 
                       let key' :: TL.Text
                           key' = TL.fromStrict key
                           vals' :: [TL.Text]
                           vals' =  fmap (TL.pack . (prettySkeleton withLink)) $ skels
-                      in TL.concat $  key' : vals'
+                      in key' <> " = " <> TL.strip (TL.concat vals')
               -- where toText (ParaText text) = TL.fromStrict text
               --       toText (ParaLink link) = TL.fromStrict $ linkAnchor link
             infoboxToText _ = TL.pack ""
