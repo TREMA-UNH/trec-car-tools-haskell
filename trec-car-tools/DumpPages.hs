@@ -44,6 +44,7 @@ opts = subparser
     <> cmd "dump-header"   dumpHeader
     <> cmd "provenance"   dumpHeader
     <> cmd "queries"  dumpQueries
+    <> cmd "infobox"  dumpInfoboxes
   where
     cmd name action = command name (info (helper <*> action) fullDesc)
     dumpHeader =
@@ -146,6 +147,50 @@ opts = subparser
         f getPages linkStyle = do
             pages <- getPages
             putStrLn $ unlines $ map (prettyPage linkStyle) pages
+
+
+    dumpInfoboxes =
+        f <$> pagesFromFile
+          
+      where
+        f :: IO [Page] -> IO ()
+        f getPages = do
+            pages <- getPages
+            mapM_ dumpBox pages
+          where
+            dumpBox :: Page -> IO ()
+            dumpBox page =
+                TL.writeFile fname $ TL.unlines $ map infoboxToText (pageInfoboxes page)
+              where
+                fname = unpackPageName $ pageName page
+
+
+            pageInfoboxes :: Page -> [PageSkeleton]
+            pageInfoboxes = foldMap pageSkeletonInfobox . pageSkeleton
+
+            pageSkeletonInfobox :: PageSkeleton -> [PageSkeleton]
+            pageSkeletonInfobox (Section _ _ children) = foldMap pageSkeletonInfobox children
+            pageSkeletonInfobox (Para paragraph) = []
+            pageSkeletonInfobox (Image {}) = []
+            pageSkeletonInfobox (List _ paragraph) = []
+            pageSkeletonInfobox box@(Infobox tag args) = [box]
+
+
+            infoboxToText :: PageSkeleton -> TL.Text
+            infoboxToText (Infobox  title keyValues) =
+                TL.concat $ (TL.fromStrict title) : (fmap toText keyValues)
+              where toText :: (T.Text, [PageSkeleton]) -> TL.Text
+                    toText (key, skels) = 
+                      let key' :: TL.Text
+                          key' = TL.fromStrict key
+                          vals' :: [TL.Text]
+                          vals' =  fmap (TL.pack . (prettySkeleton withLink)) $ skels
+                      in TL.concat $  key' : vals'
+              -- where toText (ParaText text) = TL.fromStrict text
+              --       toText (ParaLink link) = TL.fromStrict $ linkAnchor link
+            infoboxToText _ = TL.pack ""
+
+
 
     dumpPagesCorpus =
         f <$> pagesFromFile
@@ -273,7 +318,7 @@ allPagesFromFile =
     f <$> argument str (help "input file" <> metavar "FILE")
   where
     f :: FilePath -> IO [Page]
-    f inputFile = do
+    f inputFile = do 
         CAR.readPagesFile inputFile
 
 filteredPagesFromFile :: Parser (IO [Page])
