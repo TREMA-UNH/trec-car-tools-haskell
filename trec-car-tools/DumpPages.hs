@@ -156,14 +156,11 @@ opts = subparser
         f :: IO [Page] -> IO ()
         f getPages = do
             pages <- getPages
-            mapM_ dumpBox pages
+            mapM_ (TL.putStrLn . prettyInfoBoxes) pages
           where
-            dumpBox :: Page -> IO ()
-            dumpBox page =
-                TL.writeFile fname $ TL.unlines $ map infoboxToText (pageInfoboxes page)
-              where
-                fname = unpackPageName $ pageName page
-
+            prettyInfoBoxes :: Page -> TL.Text
+            prettyInfoBoxes page =
+                TL.unlines $ map infoboxToText (pageInfoboxes page)
 
             pageInfoboxes :: Page -> [PageSkeleton]
             pageInfoboxes = foldMap pageSkeletonInfobox . pageSkeleton
