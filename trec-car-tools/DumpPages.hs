@@ -160,7 +160,7 @@ opts = subparser
           where
             prettyInfoBoxes :: Page -> TL.Text
             prettyInfoBoxes page =
-                TL.unlines $ map infoboxToText (pageInfoboxes page)
+                TL.unlines $ mapMaybe (infoboxToText page) (pageInfoboxes page)
 
             pageInfoboxes :: Page -> [PageSkeleton]
             pageInfoboxes = foldMap pageSkeletonInfobox . pageSkeleton
@@ -173,9 +173,11 @@ opts = subparser
             pageSkeletonInfobox box@(Infobox tag args) = [box]
 
 
-            infoboxToText :: PageSkeleton -> TL.Text
-            infoboxToText (Infobox  title keyValues) = TL.unlines $
-                [ "[" <> TL.fromStrict title  <> "]" ] 
+            infoboxToText :: Page -> PageSkeleton -> Maybe TL.Text
+            infoboxToText page (Infobox  title keyValues) = Just $ TL.unlines $
+                [ ""
+                , "Page:" <> (TL.pack $ unpackPageName $ pageName page)  
+                , "[" <> TL.fromStrict title  <> "]" ] 
                 ++ fmap toText keyValues
               where toText :: (T.Text, [PageSkeleton]) -> TL.Text
                     toText (key, skels) = 
@@ -186,7 +188,7 @@ opts = subparser
                       in key' <> " = " <> TL.strip (TL.concat vals')
               -- where toText (ParaText text) = TL.fromStrict text
               --       toText (ParaLink link) = TL.fromStrict $ linkAnchor link
-            infoboxToText _ = TL.pack ""
+            infoboxToText _ _ = Nothing
 
 
 
