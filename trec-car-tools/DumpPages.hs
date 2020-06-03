@@ -375,17 +375,19 @@ dumpConvertPageIds =
 
         let result = fmap (convertPageIds pageBundle) pageIdsToFind
         hPutStrLn stderr $ unlines [ msg | Left msg <- result]
-        putStrLn $ unlines [ unpackPageId foundPageId  | Right foundPageId <- result]
+        putStrLn $ unlines [ unpackPageId foundPageId <> "\t"<> unpackPageName oldPageName  | Right (foundPageId, oldPageName) <- result]
 
-    convertPageIds :: CAR.PageBundle -> PageName -> Either String PageId
+    convertPageIds :: CAR.PageBundle -> PageName -> Either String (PageId, PageName)
     convertPageIds pageBundle pageName =
       case CAR.bundleLookupPageName pageBundle pageName of
         Just pageIdSet | not $ S.null pageIdSet 
-          -> Right $ head $ S.toList pageIdSet
+          -> let newPageId = head $ S.toList pageIdSet
+             in Right $ (newPageId, pageName)
         Nothing -> 
           case CAR.bundleLookupRedirect pageBundle pageName of
             Just pageIdSet | not $ S.null pageIdSet 
-              -> Right $ head $ S.toList pageIdSet
+              -> let newPageId = head $ S.toList pageIdSet
+                in Right $ (newPageId, pageName)
             _ -> Left $ "Not found: "<> show pageName
 
 main :: IO ()
