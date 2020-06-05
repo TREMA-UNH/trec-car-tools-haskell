@@ -24,6 +24,8 @@ import CAR.Types
 import CAR.Utils
 import CAR.ToolVersion
 import qualified CAR.Types as CAR
+import qualified Data.Text.IO as DataTextIO
+import System.IO (hPutStrLn, stderr)
 
 opts :: Parser (IO ())
 opts = subparser
@@ -45,6 +47,7 @@ opts = subparser
     <> cmd "provenance"   dumpHeader
     <> cmd "queries"  dumpQueries
     <> cmd "infobox"  dumpInfoboxes
+    <> cmd "convert-page-ids"  dumpConvertPageIds
   where
     cmd name action = command name (info (helper <*> action) fullDesc)
     dumpHeader =
@@ -358,6 +361,34 @@ filteredPagesFromFile =
 sectionHeadings :: PageSkeleton -> [SectionHeading]
 sectionHeadings (Section h _ children) = h : foldMap sectionHeadings children
 sectionHeadings _ = []
+
+
+dumpConvertPageIds :: Parser (IO ())
+dumpConvertPageIds =
+    f <$> argument str (help "input file" <> metavar "CBOR-FILE")
+      <*> argument str (help "file with page ids for conversion (one line per page id)" <> metavar "ID-File")
+  where
+    f :: FilePath -> FilePath -> IO ()
+    f inputFile redirectPageFile = do
+        pageIdsToFind <- map PageName . T.lines <$> DataTextIO.readFile redirectPageFile
+        pageBundle <- CAR.openPageBundle inputFile
+
+        let result = fmap (convertPageIds pageBundle) pageIdsToFind
+        hPutStrLn stderr $ unlines [ msg | Left msg <- result]
+        putStrLn $ unlines [ unpackPageId foundPageId <> "\t"<> unpackPageName oldPageName  | Right (foundPageId, oldPageName) <- result]
+
+    convertPageIds :: CAR.PageBundle -> PageName -> Either String (PageId, PageName)
+    convertPageIds pageBundle pageName =
+      case CAR.bundleLookupPageName pageBundle pageName of
+        Just pageIdSet | not $ S.null pageIdSet 
+          -> let newPageId = head $ S.toList pageIdSet
+             in Right $ (newPageId, pageName)
+        Nothing -> 
+          case CAR.bundleLookupRedirect pageBundle pageName of
+            Just pageIdSet | not $ S.null pageIdSet 
+              -> let newPageId = head $ S.toList pageIdSet
+                in Right $ (newPageId, pageName)
+            _ -> Left $ "Not found: "<> show pageName
 
 main :: IO ()
 main = join $ execParser' 1 (helper <*> opts) mempty
