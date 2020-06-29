@@ -397,10 +397,10 @@ dumpConvertPageIds =
 
 dumpFutureConvertPageIds :: Parser (IO())
 dumpFutureConvertPageIds =
-    f <$> option str (long "bundle" <> metavar "CBOR")
-      <*> option str (long "future-bundle" <> metavar "CBOR")
-      <*> argument str ( metavar "TITLE-FILE" )
-      <*> option str (short 'o' <> metavar "OUT-FILE" <> help "output file")
+    f <$> option str (long "bundle" <> metavar "CBOR" <> help "filepath to CBOR, matching toc, names, and redirects must exist. These can be created with `trec-car-build-toc`.")
+      <*> option str (long "future-bundle" <> metavar "CBOR" <> help "filepath to CBOR of a future dump (e.g. 2020), matching toc, names, and redirects must exist.")
+      <*> argument str ( metavar "TITLE-FILE" <> help "File with wikipedia titles to be converted. One line per title, text encoding must be UTF-8")
+      <*> option str (short 'o' <> metavar "OUT-FILE" <> help "Output file, where output will be written to. Format is `entityid \\t given page title`")
   where
     f :: FilePath -> FilePath -> FilePath -> FilePath -> IO()
     f wiki16InputFile wiki20InputFile titlesToConvert outputFile = do
@@ -418,8 +418,8 @@ dumpFutureConvertPageIds =
 
             missingTitles = fmap fst missingTitles'          
 
-        putStrLn $ "Found "<> (show $ length lookups16) <> " pages in 2016 dump"
-        putStrLn $ "Found "<> (show $ length lookups20) <> " pages in 2020 dump"
+        putStrLn $ "Found "<> (show $ length lookups16) <> " pages in given CBOR"
+        putStrLn $ "Found "<> (show $ length lookups20) <> " pages in given future CBOR"
         T.putStrLn $ "Missing page titles: " <> (T.unlines $ fmap (T.pack . unpackPageName ) missingTitles)
         
         let converted16 = 
@@ -427,12 +427,12 @@ dumpFutureConvertPageIds =
                 | (orig, Just page20IdSet) <-lookups20
                 , let page16IdSet = downgradePageId bundle16 bundle20 page20IdSet
                 ]     
-        putStrLn $ "Converted "<> (show $ length converted16) <> " from 2020 pages"
+        putStrLn $ "Converted "<> (show $ length converted16) <> " from future CBOR pages"
 
         let total16 = lookups16 <> converted16
 
         putStrLn $ ""
-        T.putStrLn $  T.unlines $ [ T.unwords [T.pack $ unpackPageName orig, T.pack $ unpackPageId id]  | (orig, Just ids) <- total16, id <- S.toList ids]
+        T.putStrLn $  T.unlines $ [ (T.pack $ unpackPageId id) <> "\t" <> (T.pack $ unpackPageName orig)  | (orig, Just ids) <- total16, id <- S.toList ids]
 
         
     look :: CAR.PageBundle -> [PageName] -> [(PageName, Maybe (S.Set PageId))] 
