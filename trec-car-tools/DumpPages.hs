@@ -2,7 +2,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 
 import Control.Monad
-import Data.List (intersperse)
+import Data.List (partition, intersperse)
 import Data.Maybe
 
 import qualified Data.Set as S
@@ -17,6 +17,7 @@ import qualified Data.Text.Lazy.Builder.Int as TB
 import Options.Applicative hiding (action)
 import qualified Codec.Serialise as CBOR
 import qualified Data.ByteString.Lazy as BSL
+import qualified Data.ByteString.Lazy.Char8 as BSL
 
 import qualified CAR.TocFile as TocFile
 import qualified CAR.AnnotationsFile as CAR
@@ -48,6 +49,7 @@ opts = subparser
     <> cmd "queries"  dumpQueries
     <> cmd "infobox"  dumpInfoboxes
     <> cmd "convert-page-ids"  dumpConvertPageIds
+    <> cmd "future-convert-page-ids"  dumpFutureConvertPageIds
   where
     cmd name action = command name (info (helper <*> action) fullDesc)
     dumpHeader =
@@ -363,6 +365,8 @@ sectionHeadings (Section h _ children) = h : foldMap sectionHeadings children
 sectionHeadings _ = []
 
 
+
+
 dumpConvertPageIds :: Parser (IO ())
 dumpConvertPageIds =
     f <$> argument str (help "input file" <> metavar "CBOR-FILE")
@@ -389,6 +393,66 @@ dumpConvertPageIds =
               -> let newPageId = head $ S.toList pageIdSet
                 in Right $ (newPageId, pageName)
             _ -> Left $ "Not found: "<> show pageName
+
+
+dumpFutureConvertPageIds :: Parser (IO())
+dumpFutureConvertPageIds =
+    f <$> option str (long "bundle" <> metavar "CBOR")
+      <*> option str (long "future-bundle" <> metavar "CBOR")
+      <*> argument str ( metavar "TITLE-FILE" )
+      <*> option str (short 'o' <> metavar "OUT-FILE" <> help "output file")
+  where
+    f :: FilePath -> FilePath -> FilePath -> FilePath -> IO()
+    f wiki16InputFile wiki20InputFile titlesToConvert outputFile = do
+        bundle16 <- CAR.openPageBundle wiki16InputFile
+        bundle20 <- CAR.openPageBundle wiki20InputFile
+        titleList <- fmap (packPageName . TL.unpack) <$> TL.lines <$> TL.readFile titlesToConvert
+
+        let (lookups16,titleList') 
+                      = partition (isJust . snd)
+                      $ look bundle16 titleList
+
+            (lookups20,missingTitles') 
+                      = partition (isJust . snd)
+                      $ look bundle20 $ fmap fst titleList'
+
+            missingTitles = fmap fst missingTitles'          
+
+        putStrLn $ "Found "<> (show $ length lookups16) <> " pages in 2016 dump"
+        putStrLn $ "Found "<> (show $ length lookups20) <> " pages in 2020 dump"
+        T.putStrLn $ "Missing page titles: " <> (T.unlines $ fmap (T.pack . unpackPageName ) missingTitles)
+        
+        let converted16 = 
+              [ (orig, Just page16IdSet)
+                | (orig, Just page20IdSet) <-lookups20
+                , let page16IdSet = downgradePageId bundle16 bundle20 page20IdSet
+                ]     
+        putStrLn $ "Converted "<> (show $ length converted16) <> " from 2020 pages"
+
+        let total16 = lookups16 <> converted16
+
+        putStrLn $ ""
+        T.putStrLn $  T.unlines $ [ T.unwords [T.pack $ unpackPageName orig, T.pack $ unpackPageId id]  | (orig, Just ids) <- total16, id <- S.toList ids]
+
+        
+    look :: CAR.PageBundle -> [PageName] -> [(PageName, Maybe (S.Set PageId))] 
+    look bundle titleList =
+      [ (title, titleOpt <|> redirectOpt )
+        | title <- titleList  
+        , let titleOpt = CAR.bundleLookupPageName bundle title
+              redirectOpt = (CAR.bundleLookupRedirect bundle title)
+      ]
+
+    downgradePageId :: CAR.PageBundle -> CAR.PageBundle -> S.Set PageId -> S.Set PageId
+    downgradePageId bundle16 bundle20 pageIds20 =
+          S.unions 
+            $ [ CAR.bundleLookupAllPageNames bundle16
+                $ fromMaybe [] $ getMetadata _RedirectNames $ pageMetadata  page20
+                        
+            | pageId20 <- S.toList pageIds20
+            , Just page20 <- pure $ CAR.bundleLookupPage bundle20 pageId20
+            ]
+
 
 main :: IO ()
 main = join $ execParser' 1 (helper <*> opts) mempty
