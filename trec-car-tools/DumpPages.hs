@@ -398,41 +398,53 @@ dumpConvertPageIds =
 dumpFutureConvertPageIds :: Parser (IO())
 dumpFutureConvertPageIds =
     f <$> option str (long "bundle" <> metavar "CBOR" <> help "filepath to CBOR, matching toc, names, and redirects must exist. These can be created with `trec-car-build-toc`.")
-      <*> option str (long "future-bundle" <> metavar "CBOR" <> help "filepath to CBOR of a future dump (e.g. 2020), matching toc, names, and redirects must exist.")
+      <*> optional (option str (long "future-bundle" <> metavar "CBOR" <> help "filepath to CBOR of a future dump (e.g. 2020), matching toc, names, and redirects must exist."))
       <*> argument str ( metavar "TITLE-FILE" <> help "File with wikipedia titles to be converted. One line per title, text encoding must be UTF-8")
       <*> option str (short 'o' <> metavar "OUT-FILE" <> help "Output file, where output will be written to. Format is `entityid \\t given page title`")
   where
-    f :: FilePath -> FilePath -> FilePath -> FilePath -> IO()
-    f wiki16InputFile wiki20InputFile titlesToConvert outputFile = do
+    f :: FilePath -> Maybe FilePath -> FilePath -> FilePath -> IO()
+    f wiki16InputFile wiki20InputFileOpt titlesToConvert outputFile = do
         bundle16 <- CAR.openPageBundle wiki16InputFile
-        bundle20 <- CAR.openPageBundle wiki20InputFile
         titleList <- fmap (packPageName . TL.unpack) <$> TL.lines <$> TL.readFile titlesToConvert
 
         let (lookups16,titleList') 
                       = partition (isJust . snd)
                       $ look bundle16 titleList
-
-            (lookups20,missingTitles') 
-                      = partition (isJust . snd)
-                      $ look bundle20 $ fmap fst titleList'
-
-            missingTitles = fmap fst missingTitles'          
-
+            missingTitles2016 = fmap fst titleList'
         putStrLn $ "Found "<> (show $ length lookups16) <> " pages in given CBOR"
-        putStrLn $ "Found "<> (show $ length lookups20) <> " pages in given future CBOR"
-        T.putStrLn $ "Missing page titles: " <> (T.unlines $ fmap (T.pack . unpackPageName ) missingTitles)
+
+        -- only do this if the future bundle is given
+        (converted16, missingTitles) <- do
+              case wiki20InputFileOpt of
+                Nothing -> return ([],missingTitles2016)
+                Just wiki20InputFile -> do
+                      bundle20 <- CAR.openPageBundle wiki20InputFile
+                      let (lookups20,missingTitles') 
+                                    = partition (isJust . snd)
+                                    $ look bundle20 missingTitles2016
+
+                          missingTitles = fmap fst missingTitles'          
+
+                      putStrLn $ "Found "<> (show $ length lookups20) <> " pages in given future CBOR"
+                      
+                      let converted16 = 
+                            [ (orig, Just page16IdSet)
+                              | (orig, Just page20IdSet) <-lookups20
+                              , let page16IdSet = downgradePageId bundle16 bundle20 page20IdSet
+                              ]     
+                      putStrLn $ "Converted "<> (show $ length converted16) <> " from future CBOR pages"
+                      return $ (converted16, missingTitles)
         
-        let converted16 = 
-              [ (orig, Just page16IdSet)
-                | (orig, Just page20IdSet) <-lookups20
-                , let page16IdSet = downgradePageId bundle16 bundle20 page20IdSet
-                ]     
-        putStrLn $ "Converted "<> (show $ length converted16) <> " from future CBOR pages"
+        T.putStrLn $ "Missing page titles: " <> (T.unlines $ fmap (T.pack . unpackPageName ) missingTitles)
 
         let total16 = lookups16 <> converted16
 
         putStrLn $ ""
-        T.putStrLn $  T.unlines $ [ (T.pack $ unpackPageId id) <> "\t" <> (T.pack $ unpackPageName orig)  | (orig, Just ids) <- total16, id <- S.toList ids]
+        TL.writeFile outputFile 
+          $  TL.unlines 
+          $ [ (TL.pack $ unpackPageId id) <> "\t" <> (TL.pack $ unpackPageName orig)  
+            | (orig, Just ids) <- total16, id <- S.toList ids
+            ]
 
         
     look :: CAR.PageBundle -> [PageName] -> [(PageName, Maybe (S.Set PageId))] 
