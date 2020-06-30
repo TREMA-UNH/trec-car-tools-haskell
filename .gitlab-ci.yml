@@ -14,6 +14,7 @@ static-dist:
   script:
     - sudo apk add xz xz-dev icu icu-dev icu-static zlib-static
     - cabal update
+    - rm -Rf out
     - |
       cabal --store-dir=$(pwd)/.cabal-store \
         v2-install \
