@@ -22,7 +22,7 @@ static-dist:
         --installdir=out --overwrite-policy=always \
         exe:trec-car-dump exe:trec-car-build-toc exe:trec-car-trec-run-filter exe:trec-car-trec-run-modify exe:trec-car-qrels-modify exe:trec-car-cat
     - rm -Rf result; cp -Lr out/ result
-    - ls result  
+    - ls -la result  
 
   cache:
     paths:
