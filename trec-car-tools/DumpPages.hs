@@ -2,7 +2,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 
 import Control.Monad
-import Data.List (intersperse)
+import Data.List (partition, intersperse)
 import Data.Maybe
 
 import qualified Data.Set as S
@@ -17,6 +17,7 @@ import qualified Data.Text.Lazy.Builder.Int as TB
 import Options.Applicative hiding (action)
 import qualified Codec.Serialise as CBOR
 import qualified Data.ByteString.Lazy as BSL
+import qualified Data.ByteString.Lazy.Char8 as BSL
 
 import qualified CAR.TocFile as TocFile
 import qualified CAR.AnnotationsFile as CAR
@@ -24,6 +25,8 @@ import CAR.Types
 import CAR.Utils
 import CAR.ToolVersion
 import qualified CAR.Types as CAR
+import qualified Data.Text.IO as DataTextIO
+import System.IO (hPutStrLn, stderr)
 
 opts :: Parser (IO ())
 opts = subparser
@@ -45,6 +48,8 @@ opts = subparser
     <> cmd "provenance"   dumpHeader
     <> cmd "queries"  dumpQueries
     <> cmd "infobox"  dumpInfoboxes
+    <> cmd "convert-page-ids"  dumpConvertPageIds
+    <> cmd "future-convert-page-ids"  dumpFutureConvertPageIds
   where
     cmd name action = command name (info (helper <*> action) fullDesc)
     dumpHeader =
@@ -156,14 +161,11 @@ opts = subparser
         f :: IO [Page] -> IO ()
         f getPages = do
             pages <- getPages
-            mapM_ dumpBox pages
+            mapM_ (TL.putStrLn . prettyInfoBoxes) pages
           where
-            dumpBox :: Page -> IO ()
-            dumpBox page =
-                TL.writeFile fname $ TL.unlines $ map infoboxToText (pageInfoboxes page)
-              where
-                fname = unpackPageName $ pageName page
-
+            prettyInfoBoxes :: Page -> TL.Text
+            prettyInfoBoxes page =
+                TL.unlines $ mapMaybe (infoboxToText page) (pageInfoboxes page)
 
             pageInfoboxes :: Page -> [PageSkeleton]
             pageInfoboxes = foldMap pageSkeletonInfobox . pageSkeleton
@@ -176,19 +178,22 @@ opts = subparser
             pageSkeletonInfobox box@(Infobox tag args) = [box]
 
 
-            infoboxToText :: PageSkeleton -> TL.Text
-            infoboxToText (Infobox  title keyValues) =
-                TL.concat $ (TL.fromStrict title) : (fmap toText keyValues)
+            infoboxToText :: Page -> PageSkeleton -> Maybe TL.Text
+            infoboxToText page (Infobox  title keyValues) = Just $ TL.unlines $
+                [ ""
+                , "Page:" <> (TL.pack $ unpackPageName $ pageName page)  
+                , "[" <> TL.fromStrict title  <> "]" ] 
+                ++ fmap toText keyValues
               where toText :: (T.Text, [PageSkeleton]) -> TL.Text
                     toText (key, skels) = 
                       let key' :: TL.Text
                           key' = TL.fromStrict key
                           vals' :: [TL.Text]
                           vals' =  fmap (TL.pack . (prettySkeleton withLink)) $ skels
-                      in TL.concat $  key' : vals'
+                      in key' <> " = " <> TL.strip (TL.concat vals')
               -- where toText (ParaText text) = TL.fromStrict text
               --       toText (ParaLink link) = TL.fromStrict $ linkAnchor link
-            infoboxToText _ = TL.pack ""
+            infoboxToText _ _ = Nothing
 
 
 
@@ -358,6 +363,108 @@ filteredPagesFromFile =
 sectionHeadings :: PageSkeleton -> [SectionHeading]
 sectionHeadings (Section h _ children) = h : foldMap sectionHeadings children
 sectionHeadings _ = []
+
+
+
+
+dumpConvertPageIds :: Parser (IO ())
+dumpConvertPageIds =
+    f <$> argument str (help "input file" <> metavar "CBOR-FILE")
+      <*> argument str (help "file with page ids for conversion (one line per page id)" <> metavar "ID-File")
+  where
+    f :: FilePath -> FilePath -> IO ()
+    f inputFile redirectPageFile = do
+        pageIdsToFind <- map PageName . T.lines <$> DataTextIO.readFile redirectPageFile
+        pageBundle <- CAR.openPageBundle inputFile
+
+        let result = fmap (convertPageIds pageBundle) pageIdsToFind
+        hPutStrLn stderr $ unlines [ msg | Left msg <- result]
+        putStrLn $ unlines [ unpackPageId foundPageId <> "\t"<> unpackPageName oldPageName  | Right (foundPageId, oldPageName) <- result]
+
+    convertPageIds :: CAR.PageBundle -> PageName -> Either String (PageId, PageName)
+    convertPageIds pageBundle pageName =
+      case CAR.bundleLookupPageName pageBundle pageName of
+        Just pageIdSet | not $ S.null pageIdSet 
+          -> let newPageId = head $ S.toList pageIdSet
+             in Right $ (newPageId, pageName)
+        Nothing -> 
+          case CAR.bundleLookupRedirect pageBundle pageName of
+            Just pageIdSet | not $ S.null pageIdSet 
+              -> let newPageId = head $ S.toList pageIdSet
+                in Right $ (newPageId, pageName)
+            _ -> Left $ "Not found: "<> show pageName
+
+
+dumpFutureConvertPageIds :: Parser (IO())
+dumpFutureConvertPageIds =
+    f <$> option str (long "bundle" <> metavar "CBOR" <> help "filepath to CBOR, matching toc, names, and redirects must exist. These can be created with `trec-car-build-toc`.")
+      <*> optional (option str (long "future-bundle" <> metavar "CBOR" <> help "filepath to CBOR of a future dump (e.g. 2020), matching toc, names, and redirects must exist."))
+      <*> argument str ( metavar "TITLE-FILE" <> help "File with wikipedia titles to be converted. One line per title, text encoding must be UTF-8")
+      <*> option str (short 'o' <> metavar "OUT-FILE" <> help "Output file, where output will be written to. Format is `entityid \\t given page title`")
+  where
+    f :: FilePath -> Maybe FilePath -> FilePath -> FilePath -> IO()
+    f wiki16InputFile wiki20InputFileOpt titlesToConvert outputFile = do
+        bundle16 <- CAR.openPageBundle wiki16InputFile
+        titleList <- fmap (packPageName . TL.unpack) <$> TL.lines <$> TL.readFile titlesToConvert
+
+        let (lookups16,titleList') 
+                      = partition (isJust . snd)
+                      $ look bundle16 titleList
+            missingTitles2016 = fmap fst titleList'
+        putStrLn $ "Found "<> (show $ length lookups16) <> " pages in given CBOR"
+
+        -- only do this if the future bundle is given
+        (converted16, missingTitles) <- do
+              case wiki20InputFileOpt of
+                Nothing -> return ([],missingTitles2016)
+                Just wiki20InputFile -> do
+                      bundle20 <- CAR.openPageBundle wiki20InputFile
+                      let (lookups20,missingTitles') 
+                                    = partition (isJust . snd)
+                                    $ look bundle20 missingTitles2016
+
+                          missingTitles = fmap fst missingTitles'          
+
+                      putStrLn $ "Found "<> (show $ length lookups20) <> " pages in given future CBOR"
+                      
+                      let converted16 = 
+                            [ (orig, Just page16IdSet)
+                              | (orig, Just page20IdSet) <-lookups20
+                              , let page16IdSet = downgradePageId bundle16 bundle20 page20IdSet
+                              ]     
+                      putStrLn $ "Converted "<> (show $ length converted16) <> " from future CBOR pages"
+                      return $ (converted16, missingTitles)
+        
+        T.putStrLn $ "Missing page titles: " <> (T.unlines $ fmap (T.pack . unpackPageName ) missingTitles)
+
+        let total16 = lookups16 <> converted16
+
+        putStrLn $ ""
+        TL.writeFile outputFile 
+          $  TL.unlines 
+          $ [ (TL.pack $ unpackPageId id) <> "\t" <> (TL.pack $ unpackPageName orig)  
+            | (orig, Just ids) <- total16, id <- S.toList ids
+            ]
+
+        
+    look :: CAR.PageBundle -> [PageName] -> [(PageName, Maybe (S.Set PageId))] 
+    look bundle titleList =
+      [ (title, titleOpt <|> redirectOpt )
+        | title <- titleList  
+        , let titleOpt = CAR.bundleLookupPageName bundle title
+              redirectOpt = (CAR.bundleLookupRedirect bundle title)
+      ]
+
+    downgradePageId :: CAR.PageBundle -> CAR.PageBundle -> S.Set PageId -> S.Set PageId
+    downgradePageId bundle16 bundle20 pageIds20 =
+          S.unions 
+            $ [ CAR.bundleLookupAllPageNames bundle16
+                $ fromMaybe [] $ getMetadata _RedirectNames $ pageMetadata  page20
+                        
+            | pageId20 <- S.toList pageIds20
+            , Just page20 <- pure $ CAR.bundleLookupPage bundle20 pageId20
+            ]
+
 
 main :: IO ()
 main = join $ execParser' 1 (helper <*> opts) mempty

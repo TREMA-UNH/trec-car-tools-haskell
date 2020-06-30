@@ -90,21 +90,6 @@ executable trec-car-build-toc
   default-language:    Haskell2010
 
 
---
---executable trec-car-extract-kb
---  main-is:             ExtractKnowledgeBaseMain.hs
---  ghc-options:         -Wall
---  build-depends:       base,
---                       bytestring,
---                       unordered-containers,
---                       text,
---                       containers,
---                       optparse-applicative >= 0.12,
---                       hashable,
---                       trec-car-tools,
---                       trec-car-types
---  default-language:    Haskell2010
-
 executable trec-car-dump
   main-is:             DumpPages.hs
   ghc-options:         -Wall
