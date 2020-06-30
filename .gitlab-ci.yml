@@ -15,6 +15,7 @@ static-dist:
     - sudo apk add xz xz-dev icu icu-dev icu-static zlib-static
     - cabal update
     - rm -Rf out
+    - rm -Rf result
     - |
       cabal --store-dir=$(pwd)/.cabal-store \
         v2-install \
@@ -23,7 +24,8 @@ static-dist:
         --installdir=out --overwrite-policy=always \
         exe:trec-car-dump
     - rm -Rf result; cp -Lr out/ result
-    - ls -lh result  
+    - ls -lh result
+    - ls -lh out 
 
         #  exe:trec-car-build-toc exe:trec-car-trec-run-filter exe:trec-car-trec-run-modify exe:trec-car-qrels-modify exe:trec-car-cat
 
