@@ -37,7 +37,7 @@ static-trec-car-dump:
 
 
 
-static-trec-car-build-toc
+static-trec-car-build-toc:
   stage: build
   before_script:
     - ghc --version
