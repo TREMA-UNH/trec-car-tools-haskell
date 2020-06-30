@@ -23,7 +23,7 @@ static-dist:
         -fstatic --ghc-options='-optl=-static' \
         --installdir=out --overwrite-policy=always \
         exe:trec-car-dump
-    - rm -Rf result; cp -Lr out/ result
+    - rm -Rf result; cp -Lr out/trec-car-dump result
     - ls -lh result
     - ls -lh out 
 
