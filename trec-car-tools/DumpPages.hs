@@ -442,12 +442,12 @@ dumpFutureConvertPageIds =
 
                       putStrLn $ "Converted "<> (show $ length converted16') <> " from future CBOR pages"
                       putStrLn ""
-                      T.putStrLn $ "Pages found in 2020, but not in 2016: " <> (T.unlines $ fmap (T.pack . unpackPageName ) missingConverted')
+                      T.putStrLn $ "Pages found in future bundle, but not in target bundle: " <> (T.unlines $ fmap (T.pack . unpackPageName ) missingConverted')
                       putStrLn ""
 
                       return $ (converted16', missingTitles)
         
-        T.putStrLn $ "Page titles unresolvable in 2020: " <> (T.unlines $ fmap (T.pack . unpackPageName ) missingTitles)
+        T.putStrLn $ "Page titles unresolvable in future or target bundle: " <> (T.unlines $ fmap (T.pack . unpackPageName ) missingTitles)
 
         let total16 = lookups16 <> converted16
 
