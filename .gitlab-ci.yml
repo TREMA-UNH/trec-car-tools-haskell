@@ -1,0 +1,66 @@
+image: registry.gitlab.haskell.org/ghc/ci-images/x86_64-linux-alpine
+stages:
+  - build
+  - test
+
+variables:
+  THREADS: 9
+  GIT_SUBMODULE_STRATEGY: recursive
+
+static-trec-car-dump:
+  stage: build
+  before_script:
+    - ghc --version
+  script:
+    - sudo apk add xz xz-dev icu icu-dev icu-static zlib-static
+    - cabal update
+    - rm -Rf out
+    - rm -Rf result
+    - |
+      cabal --store-dir=$(pwd)/.cabal-store \
+        v2-install \
+        --disable-shared --enable-static --enable-executable-static \
+        -fstatic --ghc-options='-optl=-static' \
+        --installdir=out --overwrite-policy=always \
+        exe:trec-car-dump exe:trec-car-build-toc exe:trec-car-trec-run-filter exe:trec-car-trec-run-modify exe:trec-car-qrels-modify exe:trec-car-cat
+    - rm -Rf result; mkdir -p result; cp -Lr out/trec-car-dump result/
+    - ls -lh result
+    - ls -lh out 
+
+  cache:
+    paths:
+      - .cabal-store
+  artifacts:
+    expire_in: 8 weeks
+    paths:
+      - result
+
+
+
+static-trec-car-build-toc:
+  stage: build
+  before_script:
+    - ghc --version
+  script:
+    - sudo apk add xz xz-dev icu icu-dev icu-static zlib-static
+    - cabal update
+    - rm -Rf out
+    - rm -Rf result
+    - |
+      cabal --store-dir=$(pwd)/.cabal-store \
+        v2-install \
+        --disable-shared --enable-static --enable-executable-static \
+        -fstatic --ghc-options='-optl=-static' \
+        --installdir=out --overwrite-policy=always \
+        exe:trec-car-dump exe:trec-car-build-toc exe:trec-car-trec-run-filter exe:trec-car-trec-run-modify exe:trec-car-qrels-modify exe:trec-car-cat
+    - rm -Rf result; mkdir -p result; cp -Lr out/trec-car-build-toc result/
+    - ls -lh result
+    - ls -lh out 
+
+  cache:
+    paths:
+      - .cabal-store
+  artifacts:
+    expire_in: 8 weeks
+    paths:
+      - result

@@ -428,14 +428,26 @@ dumpFutureConvertPageIds =
                       putStrLn $ "Found "<> (show $ length lookups20) <> " pages in given future CBOR"
                       
                       let converted16 = 
-                            [ (orig, Just page16IdSet)
+                            [ (orig, maybeSet page16IdSet)
                               | (orig, Just page20IdSet) <-lookups20
                               , let page16IdSet = downgradePageId bundle16 bundle20 page20IdSet
                               ]     
-                      putStrLn $ "Converted "<> (show $ length converted16) <> " from future CBOR pages"
-                      return $ (converted16, missingTitles)
+                            where maybeSet :: S.Set a -> Maybe (S.Set a)
+                                  maybeSet set =
+                                    if S.null set 
+                                      then Nothing
+                                      else Just set
+                          (converted16', missingConverted) = partition (isJust . snd) converted16     
+                          missingConverted' = fmap fst missingConverted       
+
+                      putStrLn $ "Converted "<> (show $ length converted16') <> " from future CBOR pages"
+                      putStrLn ""
+                      T.putStrLn $ "Pages found in future bundle, but not in target bundle: " <> (T.unlines $ fmap (T.pack . unpackPageName ) missingConverted')
+                      putStrLn ""
+
+                      return $ (converted16', missingTitles)
         
-        T.putStrLn $ "Missing page titles: " <> (T.unlines $ fmap (T.pack . unpackPageName ) missingTitles)
+        T.putStrLn $ "Page titles unresolvable in future or target bundle: " <> (T.unlines $ fmap (T.pack . unpackPageName ) missingTitles)
 
         let total16 = lookups16 <> converted16
 
