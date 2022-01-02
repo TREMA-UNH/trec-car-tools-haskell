@@ -324,7 +324,7 @@ allPagesFromFile =
   where
     f :: FilePath -> IO [Page]
     f inputFile = do 
-        CAR.readPagesFile inputFile
+        CAR.readPagesOrOutlinesAsPages inputFile
 
 filteredPagesFromFile :: Parser (IO [Page])
 filteredPagesFromFile =

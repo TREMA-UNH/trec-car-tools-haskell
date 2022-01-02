@@ -30,6 +30,7 @@ module CAR.Types.AST
     , getMetadata
     , setMetadata
     , clearMetadata
+    , WikiDataId(..)
       -- *** Fields
     , _RedirectNames
     , _DisambiguationNames
@@ -39,6 +40,7 @@ module CAR.Types.AST
     , _InlinkIds
     , _InlinkAnchors
     , _UnknownMetadata
+    , _WikiDataQID
       -- * Outline documents
     , Stub(..)
       -- * Entity
@@ -62,6 +64,8 @@ import qualified Codec.CBOR.Term as CBOR
 import qualified Data.ByteString.Short as SBS
 import qualified Data.Text as T
 import qualified Data.Text.Encoding as TE
+import qualified Data.Text.Read as TR
+
 import Data.Binary
 import Network.URI
 import Crypto.Hash.SHA1 as SHA
@@ -331,6 +335,35 @@ instance CBOR.Serialise PageType where
       where
         simple n = CBOR.encodeListLen 1 <> CBOR.encodeInt n
 
+newtype WikiDataId = WikiDataId Int
+                 deriving (Eq, Ord, Hashable)
+
+instance Show WikiDataId where
+  show (WikiDataId idNumber) = "Q" <> show idNumber
+
+instance FromJSON WikiDataId where
+    parseJSON = withText "WikiDataId" $ maybe (fail "invalid item id") pure . readWikiDataId
+
+instance ToJSON WikiDataId where
+    toJSON = toJSON . show
+
+instance CBOR.Serialise WikiDataId where
+    encode = CBOR.encode . T.pack . show
+    decode = do
+        qidStr <- CBOR.decode
+        case readWikiDataId qidStr of
+          Just qid -> return qid 
+          Nothing -> fail $ "Can't parse Wikidata Qid: " <> show qidStr
+
+
+readWikiDataId :: T.Text -> Maybe WikiDataId
+readWikiDataId s
+  | Just rest <- T.stripPrefix (T.pack "Q") $ T.strip s
+  , Right (n, _) <- TR.decimal rest
+  = Just $ WikiDataId n
+  | otherwise
+  = Nothing
+
 newtype PageMetadata = PageMetadata [MetadataItem]
                      deriving (CBOR.Serialise)
 
@@ -338,8 +371,6 @@ instance Show PageMetadata where
   show (PageMetadata list) =
       unlines $ fmap show' list
     where show' x = "- " ++ show x
-
-
 
 emptyPageMetadata :: PageMetadata
 emptyPageMetadata = PageMetadata []
@@ -352,6 +383,7 @@ data MetadataItem = RedirectNames [PageName]
                   | InlinkIds [PageId]
                   | OldInlinkAnchors [T.Text] -- ^ deprecated
                   | InlinkAnchors (V.Vector (T.Text, Int))
+                  | WikiDataQID WikiDataId
                   | UnknownMetadata !Int !Int [CBOR.Term]
                   deriving (Show, Generic)
 
@@ -368,6 +400,7 @@ instance CBOR.Serialise MetadataItem where
           5 -> InlinkIds <$> CBOR.decode
           6 -> OldInlinkAnchors <$> CBOR.decode
           7 -> InlinkAnchors <$> CBOR.decode
+          8 -> WikiDataQID <$> CBOR.decode
           _ -> UnknownMetadata len tag <$> replicateM (len-1) CBOR.decodeTerm
 
     encode val =
@@ -380,6 +413,7 @@ instance CBOR.Serialise MetadataItem where
           InlinkIds xs -> simple 5 xs
           OldInlinkAnchors xs -> simple 6 xs
           InlinkAnchors xs -> simple 7 xs
+          WikiDataQID x -> simple 8 x
           UnknownMetadata len tag y ->
                  CBOR.encodeListLen (fromIntegral len)
               <> CBOR.encodeInt tag
