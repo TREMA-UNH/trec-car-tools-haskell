@@ -7,6 +7,27 @@ variables:
   THREADS: 9
   GIT_SUBMODULE_STRATEGY: recursive
 
+nix-build:
+  stage: build
+  # Use 2.3.12 due to https://github.com/NixOS/nix/issues/5797
+  image: nixos/nix:2.3.12
+  before_script:
+    - |
+      if [ -e ./cache.nar ]; then
+          nix-store --import < ./cache.nar || true
+      fi
+    - nix-env -iA git -f '<nixpkgs>'
+    - nix-env -iA cachix -f '<nixpkgs>'
+    - cachix use trec-car-tools
+    - cachix authtoken $CACHIX_AUTH_TOKEN
+    - nix-build '<nixpkgs>' -A hello | cachix push trec-car-tools
+  script:
+    - nix-build . -A env --cores 1 -j $THREADS | cachix push trec-car-tools
+    - nix-store --export $(nix-store -qR ./result) > ./cache.nar
+  cache:
+    paths:
+      - ./cache.nar
+
 static-trec-car-dump:
   stage: build
   before_script:
