@@ -41,6 +41,7 @@ module CAR.Types.AST
     , _InlinkAnchors
     , _UnknownMetadata
     , _WikiDataQID
+    , _WikiSiteId
       -- * Outline documents
     , Stub(..)
       -- * Entity
@@ -384,6 +385,7 @@ data MetadataItem = RedirectNames [PageName]
                   | OldInlinkAnchors [T.Text] -- ^ deprecated
                   | InlinkAnchors (V.Vector (T.Text, Int))
                   | WikiDataQID WikiDataId
+                  | WikiSiteId SiteId
                   | UnknownMetadata !Int !Int [CBOR.Term]
                   deriving (Show, Generic)
 
@@ -401,6 +403,7 @@ instance CBOR.Serialise MetadataItem where
           6 -> OldInlinkAnchors <$> CBOR.decode
           7 -> InlinkAnchors <$> CBOR.decode
           8 -> WikiDataQID <$> CBOR.decode
+          9 -> WikiSiteId <$> CBOR.decode
           _ -> UnknownMetadata len tag <$> replicateM (len-1) CBOR.decodeTerm
 
     encode val =
@@ -414,6 +417,7 @@ instance CBOR.Serialise MetadataItem where
           OldInlinkAnchors xs -> simple 6 xs
           InlinkAnchors xs -> simple 7 xs
           WikiDataQID x -> simple 8 x
+          WikiSiteId x -> simple 9 x
           UnknownMetadata len tag y ->
                  CBOR.encodeListLen (fromIntegral len)
               <> CBOR.encodeInt tag
