@@ -1,4 +1,3 @@
-image: registry.gitlab.haskell.org/ghc/ci-images/x86_64-linux-alpine
 stages:
   - build
   - test
@@ -25,29 +24,44 @@ nix-build:
     - nix-build . -A env --cores 1 -j $THREADS | cachix push trec-car-tools
     - nix-store --export $(nix-store -qR ./result) > ./cache.nar
   cache:
+    key: nix
     paths:
       - ./cache.nar
 
-static-trec-car-dump:
+.build-static:
+  image: alpine:3.15
+  variables:
+    EXEC_NAME: TODO
   stage: build
   before_script:
+    - apk add curl xz xz-dev icu icu-dev icu-static zlib-static zlib-dev
+        binutils-gold curl gcc gmp-dev libc-dev libffi-dev make
+        musl-dev ncurses-dev perl tar xz git
+    - curl --proto '=https' --tlsv1.2 -sSf https://get-ghcup.haskell.org | sh
+    - source /root/.ghcup/env
     - ghc --version
-  script:
-    - sudo apk add xz xz-dev icu icu-dev icu-static zlib-static
     - cabal update
     - rm -Rf out
     - rm -Rf result
+  script:
     - |
-      cabal --store-dir=$(pwd)/.cabal-store \
-        v2-install \
-        --disable-shared --enable-static --enable-executable-static \
-        -fstatic --ghc-options='-optl=-static' \
-        --installdir=out --overwrite-policy=always \
-        exe:trec-car-dump exe:trec-car-build-toc exe:trec-car-trec-run-filter exe:trec-car-trec-run-modify exe:trec-car-qrels-modify exe:trec-car-cat
-    - rm -Rf result; mkdir -p result; cp -Lr out/trec-car-dump result/
+      cat >cabal.project.local <<EOF
+      store-dir: /trec-car-tools-haskell/.cabal-store
+      package *
+        ghc-options: -optl=-static
+        executable-static: True
+        executable-dynamic: False
+        shared: False
+        static: True
+      EOF
+    - cabal build ${EXEC_NAME/#/exe:}
+    - rm -Rf result; mkdir -p result
+    - |
+      for i in $EXEC_NAME; do
+        cp $(cabal list --store-dir=$(pwd)/.cabal-store exe:$i) result
+      done
     - ls -lh result
     - ls -lh out 
-
   cache:
     paths:
       - .cabal-store
@@ -55,33 +69,8 @@ static-trec-car-dump:
     expire_in: 8 weeks
     paths:
       - result
-
-
 
 static-trec-car-build-toc:
-  stage: build
-  before_script:
-    - ghc --version
-  script:
-    - sudo apk add xz xz-dev icu icu-dev icu-static zlib-static
-    - cabal update
-    - rm -Rf out
-    - rm -Rf result
-    - |
-      cabal --store-dir=$(pwd)/.cabal-store \
-        v2-install \
-        --disable-shared --enable-static --enable-executable-static \
-        -fstatic --ghc-options='-optl=-static' \
-        --installdir=out --overwrite-policy=always \
-        exe:trec-car-dump exe:trec-car-build-toc exe:trec-car-trec-run-filter exe:trec-car-trec-run-modify exe:trec-car-qrels-modify exe:trec-car-cat
-    - rm -Rf result; mkdir -p result; cp -Lr out/trec-car-build-toc result/
-    - ls -lh result
-    - ls -lh out 
-
-  cache:
-    paths:
-      - .cabal-store
-  artifacts:
-    expire_in: 8 weeks
-    paths:
-      - result
+  extends: .build-static
+  variables:
+    EXEC_NAME: trec-car-dump trec-car-build-toc trec-car-trec-run-filter trec-car-trec-run-modify trec-car-qrels-modify trec-car-cat
