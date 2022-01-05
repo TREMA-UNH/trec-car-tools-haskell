@@ -1,15 +1,12 @@
+with-compiler: ghc-9.2.1
+
 constraints:
   containers >= 0.6,
   streaming-commons >= 0.2.2.3,
   attoparsec >= 0.14,
   bytestring >= 0.11
 
-packages: ./pipes-lzma
-
 allow-newer: base, pipes-safe, ghc-prim, template-haskell, bytestring
-
-with-compiler: /nix/store/xhxc17xj4c7pr3pcaycvmq1drjldlg93-ghc-9.2.1/bin/ghc-9.2.1
-
 
 repository head.hackage.ghc.haskell.org
    url: https://ghc.gitlab.haskell.org/head.hackage/

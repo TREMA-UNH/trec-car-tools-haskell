@@ -30,22 +30,26 @@ nix-build:
 
 .build-static:
   image: alpine:3.15
+  allow_failure: true
   variables:
     EXEC_NAME: TODO
+    BOOTSTRAP_HASKELL_GHC_VERSION: 9.2.1
   stage: build
   before_script:
     - apk add curl xz xz-dev icu icu-dev icu-static zlib-static zlib-dev
         binutils-gold curl gcc gmp-dev libc-dev libffi-dev make
         musl-dev ncurses-dev perl tar xz git
+        leveldb leveldb-dev kyotocabinet kyotocabinet-dev bzip2 bzip2-dev
     - curl --proto '=https' --tlsv1.2 -sSf https://get-ghcup.haskell.org | sh
     - source /root/.ghcup/env
     - ghc --version
+    - cp cabal.project.local.ghc-9.2 cabal.project.local
     - cabal update
     - rm -Rf out
     - rm -Rf result
   script:
     - |
-      cat >cabal.project.local <<EOF
+      cat >>cabal.project.local <<EOF
       store-dir: /trec-car-tools-haskell/.cabal-store
       package *
         ghc-options: -optl=-static
