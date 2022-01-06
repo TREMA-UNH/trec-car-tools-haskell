@@ -22,6 +22,7 @@ nix-build:
     - nix-build '<nixpkgs>' -A hello | cachix push trec-car-tools
   script:
     - nix-build . -A env --cores 1 -j $THREADS | cachix push trec-car-tools
+    - nix-build . -A binaries --cores 1 -j $THREADS | cachix push trec-car-tools
     - nix-store --export $(nix-store -qR ./result) > ./cache.nar
   cache:
     key: nix
