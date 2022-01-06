@@ -41,7 +41,7 @@ library
                        network-uri >=2.6 && <2.8,
                        base16-bytestring >=1.0 && <1.1,
                        vector >=0.12 && <0.13,
-                       lens >=4.17 && <4.20,
+                       lens >=4.17 && <5.2,
                        aeson >= 1.0,
                        dlist,
                        mmap,
