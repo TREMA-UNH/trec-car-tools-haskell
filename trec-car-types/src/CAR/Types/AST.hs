@@ -26,6 +26,7 @@ module CAR.Types.AST
       -- ** Metadata
     , PageMetadata(..)
     , MetadataField
+    , MetadataItem(..)
     , emptyPageMetadata
     , getMetadata
     , setMetadata
