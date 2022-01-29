@@ -19,6 +19,7 @@ library
                        CAR.Types.Provenance,
                        CAR.Types.AST,
                        CAR.Types.AST.Pretty,
+                       CAR.CarJSON,
                        CAR.TocFile,
                        CAR.ToolVersion
                        CAR.Utils.Compact,
