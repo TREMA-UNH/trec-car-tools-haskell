@@ -40,6 +40,7 @@ module CAR.Types.AST
     , _CategoryIds
     , _InlinkIds
     , _InlinkAnchors
+    , _PageTags
     , _UnknownMetadata
     , _WikiDataQID
     , _WikiSiteId
@@ -387,6 +388,7 @@ data MetadataItem = RedirectNames [PageName]
                   | InlinkAnchors (V.Vector (T.Text, Int))
                   | WikiDataQID WikiDataId
                   | WikiSiteId SiteId
+                  | PageTags [T.Text]
                   | UnknownMetadata !Int !Int [CBOR.Term]
                   deriving (Show, Generic)
 
@@ -405,6 +407,7 @@ instance CBOR.Serialise MetadataItem where
           7 -> InlinkAnchors <$> CBOR.decode
           8 -> WikiDataQID <$> CBOR.decode
           9 -> WikiSiteId <$> CBOR.decode
+          10 -> PageTags <$> CBOR.decode
           _ -> UnknownMetadata len tag <$> replicateM (len-1) CBOR.decodeTerm
 
     encode val =
@@ -419,6 +422,7 @@ instance CBOR.Serialise MetadataItem where
           InlinkAnchors xs -> simple 7 xs
           WikiDataQID x -> simple 8 x
           WikiSiteId x -> simple 9 x
+          PageTags tag -> simple 10 tag
           UnknownMetadata len tag y ->
                  CBOR.encodeListLen (fromIntegral len)
               <> CBOR.encodeInt tag
