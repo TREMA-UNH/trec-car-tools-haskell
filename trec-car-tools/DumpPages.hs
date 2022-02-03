@@ -1,6 +1,7 @@
 {-# LANGUAGE MultiWayIf #-}
 {-# LANGUAGE OverloadedStrings #-}
 
+module Main where
 import Control.Monad
 import Data.List (partition, intersperse)
 import Data.Maybe
@@ -14,7 +15,24 @@ import qualified Data.Text.Lazy as TL
 import qualified Data.Text.Lazy.IO as TL
 import qualified Data.Text.Lazy.Builder as TB
 import qualified Data.Text.Lazy.Builder.Int as TB
-import Options.Applicative hiding (action)
+import Options.Applicative
+    ( Alternative((<|>), many),
+      optional,
+      Parser,
+      argument,
+      command,
+      flag,
+      fullDesc,
+      help,
+      info,
+      long,
+      metavar,
+      option,
+      short,
+      str,
+      subparser,
+      switch,
+      helper )
 import qualified Codec.Serialise as CBOR
 import qualified Data.ByteString.Lazy as BSL
 import qualified Data.ByteString.Lazy.Char8 as BSL
@@ -22,16 +40,51 @@ import qualified Data.ByteString.Lazy.Char8 as BSL
 import qualified CAR.TocFile as TocFile
 import qualified CAR.AnnotationsFile as CAR
 import CAR.Types
+    ( Page(pageName, pageSkeleton, pageId, pageMetadata),
+      Paragraph(paraId),
+      SectionHeading(getSectionHeading),
+      PageName(getPageName),
+      unpackPageName,
+      packPageName,
+      packPageId,
+      unpackPageId,
+      unpackParagraphId,
+      packParagraphId,
+      readWikiDataId,
+      _RedirectNames,
+      _WikiDataQID,
+      getMetadata,
+      escapeSectionPath,
+      anchorOnly,
+      prettyMeta,
+      prettyPage,
+      prettyParagraph,
+      prettySkeleton,
+      withLink,
+      readParagraphsFile )
 import CAR.Utils
 import CAR.ToolVersion
-import qualified CAR.Types as CAR
+import qualified CAR.Types.AST as CAR
+    ( WikiDataId (WikiDataId),
+      Page,
+      PageSkeleton(..),
+      ParagraphId,
+      Paragraph(Paragraph),
+      SectionHeading(SectionHeading),
+      PageId,
+      PageName(PageName) )
+import qualified CAR.Types.AST.Pretty as CAR ( LinkStyle )
+import qualified CAR.Types.Files as CAR
+    ( readPagesOrOutlinesAsPages, Header )
 import qualified Data.Text.IO as DataTextIO
 import System.IO (hPutStrLn, stderr)
+import Prelude hiding (negate)
 
 opts :: Parser (IO ())
 opts = subparser
     $  cmd "titles"        dumpTitles
     <> cmd "page-ids"      dumpPageIds
+    <> cmd "page-qids"     dumpPageQids
     <> cmd "meta"          dumpMeta
     <> cmd "pages"         dumpPages
     <> cmd "pages-corpus"  dumpPagesCorpus
@@ -57,7 +110,7 @@ opts = subparser
       where
         f inputFile = do
             hdr <- CBOR.deserialise <$> BSL.readFile inputFile
-            print (hdr :: Header)
+            print (hdr :: CAR.Header)
 
     dumpTitles =
         f <$> pagesFromFile
@@ -73,6 +126,13 @@ opts = subparser
             pages <- getPages
             mapM_ (putStrLn . unpackPageId . pageId) pages
 
+    dumpPageQids = 
+        f <$> pagesFromFile
+      where
+        f getPages = do
+            pages <- getPages
+            mapM_ (print .  getMetadata _WikiDataQID  . pageMetadata) pages
+ 
 
     dumpSectionIds =
         f <$> pagesFromFile
@@ -101,13 +161,13 @@ opts = subparser
             else
               mapM_ (\p -> putStrLn $ pageQueries p) pages 
 
-        pageQueries :: Page -> String
+        pageQueries :: CAR.Page -> String
         pageQueries page =
           let qid = unpackPageId $ pageId page
               qtext = unpackPageName $ pageName page
           in qid <> "\t" <> qtext    
 
-        sectionQueries :: Page -> [String]
+        sectionQueries :: CAR.Page -> [String]
         sectionQueries page  = 
           [ escapeSectionPath sectionPath <> "\t"
             <> (unpackPageName $ pageName page) 
@@ -131,7 +191,7 @@ opts = subparser
                 pageNameStr p = (T.unpack $ getPageName $ pageName p)
                 pageIdStr p = (unpackPageId $ pageId p)
 
-                formatIndentHeadings :: (Int, SectionHeading) -> String
+                formatIndentHeadings :: (Int, CAR.SectionHeading) -> String
                 formatIndentHeadings (level, headingtext) = (replicate level '\t') <> T.unpack (getSectionHeading headingtext)
 
 
@@ -148,7 +208,7 @@ opts = subparser
         f <$> pagesFromFile
           <*> flag anchorOnly withLink (long "links" <> help "Show link targets")
       where
-        f :: IO [Page] -> LinkStyle -> IO ()
+        f :: IO [CAR.Page] -> CAR.LinkStyle -> IO ()
         f getPages linkStyle = do
             pages <- getPages
             putStrLn $ unlines $ map (prettyPage linkStyle) pages
@@ -158,33 +218,33 @@ opts = subparser
         f <$> pagesFromFile
           
       where
-        f :: IO [Page] -> IO ()
+        f :: IO [CAR.Page] -> IO ()
         f getPages = do
             pages <- getPages
             mapM_ (TL.putStrLn . prettyInfoBoxes) pages
           where
-            prettyInfoBoxes :: Page -> TL.Text
+            prettyInfoBoxes :: CAR.Page -> TL.Text
             prettyInfoBoxes page =
                 TL.unlines $ mapMaybe (infoboxToText page) (pageInfoboxes page)
 
-            pageInfoboxes :: Page -> [PageSkeleton]
+            pageInfoboxes :: CAR.Page -> [CAR.PageSkeleton]
             pageInfoboxes = foldMap pageSkeletonInfobox . pageSkeleton
 
-            pageSkeletonInfobox :: PageSkeleton -> [PageSkeleton]
-            pageSkeletonInfobox (Section _ _ children) = foldMap pageSkeletonInfobox children
-            pageSkeletonInfobox (Para paragraph) = []
-            pageSkeletonInfobox (Image {}) = []
-            pageSkeletonInfobox (List _ paragraph) = []
-            pageSkeletonInfobox box@(Infobox tag args) = [box]
+            pageSkeletonInfobox :: CAR.PageSkeleton -> [CAR.PageSkeleton]
+            pageSkeletonInfobox (CAR.Section _ _ children) = foldMap pageSkeletonInfobox children
+            pageSkeletonInfobox (CAR.Para paragraph) = []
+            pageSkeletonInfobox (CAR.Image {}) = []
+            pageSkeletonInfobox (CAR.List _ paragraph) = []
+            pageSkeletonInfobox box@(CAR.Infobox tag args) = [box]
 
 
-            infoboxToText :: Page -> PageSkeleton -> Maybe TL.Text
-            infoboxToText page (Infobox  title keyValues) = Just $ TL.unlines $
+            infoboxToText :: CAR.Page -> CAR.PageSkeleton -> Maybe TL.Text
+            infoboxToText page (CAR.Infobox  title keyValues) = Just $ TL.unlines $
                 [ ""
                 , "Page:" <> (TL.pack $ unpackPageName $ pageName page)  
                 , "[" <> TL.fromStrict title  <> "]" ] 
                 ++ fmap toText keyValues
-              where toText :: (T.Text, [PageSkeleton]) -> TL.Text
+              where toText :: (T.Text, [CAR.PageSkeleton]) -> TL.Text
                     toText (key, skels) = 
                       let key' :: TL.Text
                           key' = TL.fromStrict key
@@ -200,12 +260,12 @@ opts = subparser
     dumpPagesCorpus =
         f <$> pagesFromFile
       where
-        f :: IO [Page] -> IO ()
+        f :: IO [CAR.Page] -> IO ()
         f getPages = do
             pages <- getPages
             mapM_ dumpPage pages
           where
-            dumpPage :: Page -> IO ()
+            dumpPage :: CAR.Page -> IO ()
             dumpPage page =
                 TL.writeFile fname $ TL.unlines $ map paraToText (pageParas page)
               where
@@ -215,7 +275,7 @@ opts = subparser
     dumpMeta =
         f <$> pagesFromFile
       where
-        f :: IO [Page] -> IO ()
+        f :: IO [CAR.Page] -> IO ()
         f getPages = do
             pages <- getPages
             putStrLn $ unlines $ map prettyMeta pages
@@ -223,19 +283,19 @@ opts = subparser
     paragraphIdsInPages =
         f <$> pagesFromFile
       where
-        f :: IO [Page] -> IO ()
+        f :: IO [CAR.Page] -> IO ()
         f getPages = do
             pages <- getPages
             putStrLn $ unlines
               [ unpackParagraphId paraId'
               | page <- pages
-              , Paragraph paraId' _ <- pageParas page
+              , CAR.Paragraph paraId' _ <- pageParas page
               ]
 
     dumpEntityIds =
         f <$> pagesFromFile
       where
-        f :: IO [Page] -> IO ()
+        f :: IO [CAR.Page] -> IO ()
         f getPages = do
                 pages <- getPages
                 putStrLn $ unlines $ map entityIdFromPage pages
@@ -251,7 +311,7 @@ opts = subparser
           <*> flag anchorOnly withLink (long "links" <> help "Show link targets")
           <*> many (option (packParagraphId <$> str) (long "paragraph" <> short 'p' <> help "dump only paragraphs with the given paragraph id"))
       where
-        f :: FilePath -> LinkStyle -> [ParagraphId] -> IO ()
+        f :: FilePath -> CAR.LinkStyle -> [CAR.ParagraphId] -> IO ()
         f inputFile linkStyle paraIds = do
             paragraphs <- if null paraIds
               then readParagraphsFile inputFile
@@ -281,11 +341,11 @@ opts = subparser
           <*> option (TocFile.IndexedCborPath <$> str) (long "para2" <> help "dump only paragraph ids that are also in this file")
           <*> switch (short 'n' <> long "negate" <> help "invert matching logic")
       where
-        f :: FilePath -> TocFile.IndexedCborPath ParagraphId Paragraph -> Bool -> IO ()
+        f :: FilePath -> TocFile.IndexedCborPath CAR.ParagraphId CAR.Paragraph -> Bool -> IO ()
         f inputFile para2File negate = do
                 paragraphs <- readParagraphsFile inputFile
                 para2 <- TocFile.open para2File
-                let paragraphs' = filter (\ (Paragraph pid _) ->  negate /= isJust (TocFile.lookup pid para2) ) paragraphs
+                let paragraphs' = filter (\ (CAR.Paragraph pid _) ->  negate /= isJust (TocFile.lookup pid para2) ) paragraphs
                 putStrLn $ unlines $ map (unpackParagraphId . paraId) paragraphs'
 
     histogramHeadings =
@@ -296,7 +356,7 @@ opts = subparser
             TL.putStrLn $ TB.toLazyText
                 $ mconcat
                 $ intersperse (TB.singleton '\n')
-                $ map (\(SectionHeading h, n) -> TB.decimal n<>TB.singleton '\t'<>TB.fromText h)
+                $ map (\(CAR.SectionHeading h, n) -> TB.decimal n<>TB.singleton '\t'<>TB.fromText h)
                 $ HM.toList
                 $ HM.fromListWith (+)
                 $ map (\h -> (h,1::Int))
@@ -304,51 +364,78 @@ opts = subparser
                 $ foldMap pageSkeleton pages
 
 
-readFilteredPages :: S.Set PageName    -- ^ set of page names to read
-                  -> S.Set PageId    -- ^ set of page names to read
+-- readFilteredPagesHs :: HS.HashSet CAR.PageName    -- ^ set of page names to read
+--                   -> HS.HashSet CAR.PageId    -- ^ set of page names to read
+--                   -> HS.HashSet CAR.WikiDataId
+--                   -> CAR.PageBundle          -- ^ pages or outlines file
+--                   -> [CAR.Page]
+-- readFilteredPagesHs pageNames pageIds qids pageBundle =
+--    if HS.null pageNames && HS.null pageIds && HS.null qids  then
+--      CAR.bundleAllPages pageBundle
+--    else
+--      let pageIds' = S.filter (\pid -> not $ HS.member pid pageIds )  -- drop duplicates
+--                    $ (CAR.bundleLookupAllPageNames pageBundle) pageNames
+--      in mapMaybe (CAR.bundleLookupPage pageBundle) ( (HS.toList  pageIds) <> (S.toList pageIds')  )
+
+readFilteredPages :: S.Set CAR.PageName    -- ^ set of page names to read
+                  -> S.Set CAR.PageId    -- ^ set of page names to read
+                  -> S.Set CAR.WikiDataId
                   -> CAR.PageBundle          -- ^ pages or outlines file
-                  -> [Page]
-readFilteredPages pageNames pageIds pageBundle =
-   if S.null pageNames && S.null pageIds  then
+                  -> [CAR.Page]
+readFilteredPages pageNames pageIds qids pageBundle =
+   if S.null pageNames && S.null pageIds && S.null qids  then
      CAR.bundleAllPages pageBundle
    else
-     let pageIds' = pageIds <>  (CAR.bundleLookupAllPageNames pageBundle) pageNames
-     in mapMaybe (CAR.bundleLookupPage pageBundle) ( S.toList  pageIds')
+     let pageIds' = S.unions [
+                   pageIds 
+                  , (CAR.bundleLookupAllPageNames pageBundle) pageNames
+                  , (CAR.bundleLookupAllWikidataQids pageBundle) qids
+                  ]
+     in mapMaybe (CAR.bundleLookupPage pageBundle) (S.toList  pageIds')
 
-pagesFromFile :: Parser (IO [Page])
+pagesFromFile :: Parser (IO [CAR.Page])
 pagesFromFile = allPagesFromFile <|> filteredPagesFromFile
 
-allPagesFromFile :: Parser (IO [Page])
+allPagesFromFile :: Parser (IO [CAR.Page])
 allPagesFromFile =
     f <$> argument str (help "input file" <> metavar "FILE")
   where
-    f :: FilePath -> IO [Page]
+    f :: FilePath -> IO [CAR.Page]
     f inputFile = do 
         CAR.readPagesOrOutlinesAsPages inputFile
 
-filteredPagesFromFile :: Parser (IO [Page])
+
+filteredPagesFromFile :: Parser (IO [CAR.Page])
 filteredPagesFromFile =
     f <$> argument str (help "input file" <> metavar "FILE")
       <*> fmap S.fromList (many (option  (packPageName  <$> str) (short 'p' <> long "page" <> metavar "PAGE NAME" <> help "Page name to dump or nothing to dump all")))
       <*> fmap S.fromList (many (option  (packPageId  <$> str) (short 'P' <> long "pageid" <> metavar "PAGE ID " <> help "Page id to dump or nothing to dump all")))
-      <*> (many (option (packPageName <$> str) (long "target" <> short 't' <> help "dump only pages with links to this target page name (and the page itself)")))
-      <*> ( HS.fromList <$> many (option (packPageId <$> str) (long "targetids" <> short 'T'  <> help "dump only pages with links to this target page id (and the page itself)")))
+      <*> many (option (packPageName <$> str) (long "target" <> short 't' <> help "dump only pages with links to this target page name (and the page itself)"))      <*> ( HS.fromList <$> many (option (packPageId <$> str) (long "targetids" <> short 'T'  <> help "dump only pages with links to this target page id (and the page itself)")))
       <*> ( HS.fromList <$> many (option (packPageName <$> str)  (long "redirect" <> short 'r' <> help "dump only pages with redirects from this page name")))
+      <*> ( S.fromList <$> many (option readWikiDataId' (long "qid" <> short 'q' <> help "dump only pages with this qid")))
   where
-    f :: FilePath -> S.Set PageName -> S.Set PageId -> [PageName] -> HS.HashSet PageId -> HS.HashSet PageName -> IO [Page]
-    f inputFile pageNames pageIds targetPageNames1 targetPageIds2 redirectPageNames = do
+    readWikiDataId' = do
+      s <- str
+      case readWikiDataId s of
+        Nothing -> fail $ "Invalid WikiDataId: " <> T.unpack s
+        Just x -> return x
+
+    f :: FilePath -> S.Set CAR.PageName -> S.Set CAR.PageId -> [CAR.PageName] -> HS.HashSet CAR.PageId -> HS.HashSet CAR.PageName -> S.Set CAR.WikiDataId  -> IO [CAR.Page]
+    f inputFile pageNames pageIds targetPageNames1 targetPageIds2 redirectPageNames qids = do
         pageBundle <- CAR.openPageBundle inputFile
         let targetPageIds1 = S.toList $ CAR.bundleLookupAllPageNames pageBundle targetPageNames1
 
             targetPageIds =
                 HS.fromList targetPageIds1
                 `HS.union` targetPageIds2
+
+            searchTargets :: HS.HashSet CAR.PageId -> CAR.Page -> Bool
             searchTargets targets page =
                 if | HS.null targets -> True
-                   | (pageId page) `HS.member` targets -> True
+                   | pageId page `HS.member` targets -> True
                    | otherwise     -> let pageTargets = HS.fromList (pageLinkTargetIds page)
                                       in any (  `HS.member` pageTargets) targets
-            redirectTargets :: HS.HashSet PageName -> Page -> Bool
+            redirectTargets :: HS.HashSet CAR.PageName -> CAR.Page -> Bool
             redirectTargets redirects page =
                 if | HS.null redirects -> True
                    | Just pageRedirects <- getMetadata _RedirectNames (pageMetadata page)
@@ -356,12 +443,20 @@ filteredPagesFromFile =
                            in any (  `HS.member` pageRedirectSet) redirects
                    | otherwise -> False
 
-            pages = readFilteredPages pageNames pageIds pageBundle
-        return $ filter (redirectTargets redirectPageNames)
+            qidTargets :: S.Set CAR.WikiDataId -> CAR.Page -> Bool
+            qidTargets qids page =
+                if | S.null qids -> True
+                   | Just qid <- getMetadata _WikiDataQID (pageMetadata page)
+                        -> qid `S.member` qids
+                   | otherwise -> False
+
+            pages = readFilteredPages pageNames pageIds qids pageBundle
+        return $ filter (qidTargets qids)
+               $ filter (redirectTargets redirectPageNames)
                $ filter (searchTargets targetPageIds) pages
 
-sectionHeadings :: PageSkeleton -> [SectionHeading]
-sectionHeadings (Section h _ children) = h : foldMap sectionHeadings children
+sectionHeadings ::CAR.PageSkeleton -> [CAR.SectionHeading]
+sectionHeadings (CAR.Section h _ children) = h : foldMap sectionHeadings children
 sectionHeadings _ = []
 
 
@@ -374,14 +469,14 @@ dumpConvertPageIds =
   where
     f :: FilePath -> FilePath -> IO ()
     f inputFile redirectPageFile = do
-        pageIdsToFind <- map PageName . T.lines <$> DataTextIO.readFile redirectPageFile
+        pageIdsToFind <- map CAR.PageName . T.lines <$> DataTextIO.readFile redirectPageFile
         pageBundle <- CAR.openPageBundle inputFile
 
         let result = fmap (convertPageIds pageBundle) pageIdsToFind
         hPutStrLn stderr $ unlines [ msg | Left msg <- result]
         putStrLn $ unlines [ unpackPageId foundPageId <> "\t"<> unpackPageName oldPageName  | Right (foundPageId, oldPageName) <- result]
 
-    convertPageIds :: CAR.PageBundle -> PageName -> Either String (PageId, PageName)
+    convertPageIds :: CAR.PageBundle -> CAR.PageName -> Either String (CAR.PageId, CAR.PageName)
     convertPageIds pageBundle pageName =
       case CAR.bundleLookupPageName pageBundle pageName of
         Just pageIdSet | not $ S.null pageIdSet 
@@ -459,15 +554,15 @@ dumpFutureConvertPageIds =
             ]
 
         
-    look :: CAR.PageBundle -> [PageName] -> [(PageName, Maybe (S.Set PageId))] 
+    look :: CAR.PageBundle -> [CAR.PageName] -> [(CAR.PageName, Maybe (S.Set CAR.PageId))] 
     look bundle titleList =
       [ (title, titleOpt <|> redirectOpt )
         | title <- titleList  
         , let titleOpt = CAR.bundleLookupPageName bundle title
-              redirectOpt = (CAR.bundleLookupRedirect bundle title)
+              redirectOpt = CAR.bundleLookupRedirect bundle title
       ]
 
-    downgradePageId :: CAR.PageBundle -> CAR.PageBundle -> S.Set PageId -> S.Set PageId
+    downgradePageId :: CAR.PageBundle -> CAR.PageBundle -> S.Set CAR.PageId -> S.Set CAR.PageId
     downgradePageId bundle16 bundle20 pageIds20 =
           S.unions 
             $ [ CAR.bundleLookupAllPageNames bundle16

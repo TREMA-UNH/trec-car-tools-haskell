@@ -1,6 +1,6 @@
 module CAR.AnnotationsFile (
       PageBundle(..)
-    , bundleAllPages, bundleLookupAllPageNames
+    , bundleAllPages, bundleLookupAllPageNames, bundleLookupAllWikidataQids
     , openPageBundle
     , takeOneFromSet
     ) where
@@ -70,6 +70,7 @@ data PageBundle = PageBundle { bundleProvenance :: Provenance
                              , bundleLookupPage :: PageId -> Maybe Page
                              , bundleLookupPageName :: PageName -> Maybe (S.Set PageId)
                              , bundleLookupRedirect :: PageName -> Maybe (S.Set PageId)
+                             , bundleLookupWikidataQid :: WikiDataId -> Maybe (S.Set PageId)
                              , bundleToc :: EitherAnnotationsFile
                              , bundleNameLookup ::  NameToIdMap
                              , bundleRedirectLookup ::  NameToIdMap
@@ -81,6 +82,7 @@ openPageBundle :: FilePath -> IO PageBundle
 openPageBundle cborPath = do
     toc <- openEitherAnnotations cborPath
     nameLookup <- openNameToIdMap cborPath
+    qidLookup <- openQidToIdMap cborPath
     redirectLookup <- openRedirectToIdMap cborPath
     (prov, _) <- readPagesOrOutlinesAsPagesWithProvenance cborPath
     return PageBundle {
@@ -91,6 +93,7 @@ openPageBundle cborPath = do
                , bundleRedirectLookup = nameLookup
                , bundleLookupPage = (`lookupEither` toc)
                , bundleLookupPageName = (nameLookup `pageNameToIdMaybeSet`)
+               , bundleLookupWikidataQid = (qidLookup `qidToIdMaybeSet`)
                , bundleLookupRedirect= (redirectLookup `pageNameToIdMaybeSet`)
                }
 {-# NOINLINE openPageBundle #-}
@@ -100,11 +103,16 @@ bundleAllPages bundle = toPageListEither (bundleToc bundle)
 
 bundleLookupAllPageNames :: Foldable f => PageBundle -> f PageName -> S.Set PageId
 bundleLookupAllPageNames bundle =
-    foldMap (fromMaybe S.empty . bundleLookupPageName bundle)
+    foldMap (fromMaybe mempty . bundleLookupPageName bundle)
+
+
+bundleLookupAllWikidataQids :: Foldable f => PageBundle -> f WikiDataId -> S.Set PageId
+bundleLookupAllWikidataQids bundle =
+    foldMap (fromMaybe mempty . bundleLookupWikidataQid bundle)
 
 bundleLookupAllRedirects :: Foldable f => PageBundle -> f PageName -> S.Set PageId
 bundleLookupAllRedirects bundle =
-    foldMap (fromMaybe S.empty . bundleLookupRedirect bundle)
+    foldMap (fromMaybe mempty . bundleLookupRedirect bundle)
 
 
 

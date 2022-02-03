@@ -19,6 +19,7 @@ mode = subparser
     <> command "paragraphs" (info (helper <*> indexParagraphs) fullDesc)
     <> command "page-names" (info (helper <*> indexPageNames) fullDesc)
     <> command "page-redirects" (info (helper <*> indexPageRedirects) fullDesc)
+    <> command "page-qids" (info (helper <*> indexPageQids) fullDesc)
   where
     indexPages =
         void . Toc.createIndex pageId <$> argument str (help "articles cbor file" <> metavar "FILE")
@@ -30,6 +31,8 @@ mode = subparser
         void . NameIdx.createNameToIdMap <$> argument str (help "articles cbor file" <> metavar "FILE")
     indexPageRedirects =
         void . NameIdx.createRedirectToIdMap <$> argument str (help "articles cbor file" <> metavar "FILE")
+    indexPageQids =
+        void . NameIdx.createQidToIdMap <$> argument str (help "articles cbor file" <> metavar "FILE")
 
 
 main :: IO ()

@@ -49,6 +49,8 @@ module CAR.Types.AST
       -- * Entity
     , Entity(..)
     , pageIdToName
+      -- * WikiData
+    ,readWikiDataId
     ) where
 
 import Data.Foldable

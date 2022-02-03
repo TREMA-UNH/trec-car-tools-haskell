@@ -7,7 +7,7 @@ module CAR.Types
     , module CAR.Types.Files
     ) where
 
-import CAR.Types.AST
+import CAR.Types.AST  -- added qualified!!!
 import CAR.Types.AST.Pretty
 import CAR.Types.Files
 
