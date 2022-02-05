@@ -40,7 +40,7 @@ import qualified Data.ByteString.Lazy.Char8 as BSL
 import qualified CAR.TocFile as TocFile
 import qualified CAR.AnnotationsFile as CAR
 import CAR.Types
-    ( Page(pageName, pageSkeleton, pageId, pageMetadata),
+    ( Page(pageName, pageSkeleton, pageId, pageMetadata, Page),
       Paragraph(paraId),
       SectionHeading(getSectionHeading),
       PageName(getPageName),
@@ -79,6 +79,9 @@ import qualified CAR.Types.Files as CAR
 import qualified Data.Text.IO as DataTextIO
 import System.IO (hPutStrLn, stderr)
 import Prelude hiding (negate)
+import qualified Codec.Serialise.Decoding as T
+import qualified Data.Text.Encoding as T
+import qualified Data.Text.Lazy.Encoding as TL
 
 opts :: Parser (IO ())
 opts = subparser
@@ -131,8 +134,12 @@ opts = subparser
       where
         f getPages = do
             pages <- getPages
-            mapM_ (print .  getMetadata _WikiDataQID  . pageMetadata) pages
- 
+            forM_ pages $ \ (Page{pageMetadata = meta, pageId = pid}) -> do
+                let maybeQid = getMetadata _WikiDataQID meta
+                         :: Maybe CAR.WikiDataId
+                case maybeQid of
+                  Just qid -> print qid
+                  Nothing  -> fail $ "Page " <> unpackPageId pid <> " has no Wikidata QID"
 
     dumpSectionIds =
         f <$> pagesFromFile
@@ -412,7 +419,9 @@ filteredPagesFromFile =
       <*> fmap S.fromList (many (option  (packPageId  <$> str) (short 'P' <> long "pageid" <> metavar "PAGE ID " <> help "Page id to dump or nothing to dump all")))
       <*> many (option (packPageName <$> str) (long "target" <> short 't' <> help "dump only pages with links to this target page name (and the page itself)"))      <*> ( HS.fromList <$> many (option (packPageId <$> str) (long "targetids" <> short 'T'  <> help "dump only pages with links to this target page id (and the page itself)")))
       <*> ( HS.fromList <$> many (option (packPageName <$> str)  (long "redirect" <> short 'r' <> help "dump only pages with redirects from this page name")))
+      <*> optional (option str (long "redirects-from-file" <> metavar "FILE" <> help "like --redirect but reads all entries from a file instead of being passed in as arguments"))
       <*> ( S.fromList <$> many (option readWikiDataId' (long "qid" <> short 'q' <> help "dump only pages with this qid")))
+      <*> optional (option str (long "qids-from-file" <> metavar "FILE" <> help "like --qid but reads all entries from a file instead of being passed in as arguments"))
   where
     readWikiDataId' = do
       s <- str
@@ -420,9 +429,28 @@ filteredPagesFromFile =
         Nothing -> fail $ "Invalid WikiDataId: " <> T.unpack s
         Just x -> return x
 
-    f :: FilePath -> S.Set CAR.PageName -> S.Set CAR.PageId -> [CAR.PageName] -> HS.HashSet CAR.PageId -> HS.HashSet CAR.PageName -> S.Set CAR.WikiDataId  -> IO [CAR.Page]
-    f inputFile pageNames pageIds targetPageNames1 targetPageIds2 redirectPageNames qids = do
+    f :: FilePath 
+      -> S.Set CAR.PageName 
+      -> S.Set CAR.PageId -> [CAR.PageName] 
+      -> HS.HashSet CAR.PageId 
+      -> HS.HashSet CAR.PageName 
+      -> Maybe FilePath
+      -> S.Set CAR.WikiDataId  
+      -> Maybe FilePath
+      -> IO [CAR.Page]
+    f inputFile pageNames pageIds targetPageNames1 targetPageIds2 redirectPageNames redirectsFile qids qidsFile= do
         pageBundle <- CAR.openPageBundle inputFile
+        redirectTargets' <-
+          case redirectsFile of
+            Just f ->  HS.fromList <$> fromFile convPageName f
+            Nothing -> return redirectPageNames 
+
+        qidTargets' <-
+          case qidsFile of
+            Just f ->  S.fromList . catMaybes <$> fromFile convQid f
+            Nothing -> return qids 
+              :: IO (S.Set CAR.WikiDataId)
+
         let targetPageIds1 = S.toList $ CAR.bundleLookupAllPageNames pageBundle targetPageNames1
 
             targetPageIds =
@@ -450,10 +478,25 @@ filteredPagesFromFile =
                         -> qid `S.member` qids
                    | otherwise -> False
 
-            pages = readFilteredPages pageNames pageIds qids pageBundle
-        return $ filter (qidTargets qids)
-               $ filter (redirectTargets redirectPageNames)
+            pages = readFilteredPages pageNames pageIds qidTargets' pageBundle
+        return $ filter (qidTargets qidTargets')
+               $ filter (redirectTargets redirectTargets')
                $ filter (searchTargets targetPageIds) pages
+
+
+
+    fromFile :: (BSL.ByteString -> a ) ->  FilePath -> IO [a]
+    fromFile conv filePath = do
+        contents <- BSL.readFile filePath
+                 :: IO BSL.ByteString 
+        return $ map conv $ BSL.lines contents
+
+    convPageName :: (BSL.ByteString -> PageName )
+    convPageName str =  packPageName $ TL.unpack $ TL.decodeUtf8 str
+
+    convQid :: (BSL.ByteString -> Maybe CAR.WikiDataId )
+    convQid  str = readWikiDataId  $ TL.toStrict $ TL.decodeUtf8 $ str
+
 
 sectionHeadings ::CAR.PageSkeleton -> [CAR.SectionHeading]
 sectionHeadings (CAR.Section h _ children) = h : foldMap sectionHeadings children
