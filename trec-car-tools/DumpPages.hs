@@ -139,7 +139,7 @@ opts = subparser
                          :: Maybe CAR.WikiDataId
                 case maybeQid of
                   Just qid -> print qid
-                  Nothing  -> fail $ "Page " <> unpackPageId pid <> " has no Wikidata QID"
+                  Nothing  -> hPutStrLn stderr $ "Page " <> unpackPageId pid <> " has no Wikidata QID"
 
     dumpSectionIds =
         f <$> pagesFromFile
