@@ -129,7 +129,7 @@ opts = subparser
             pages <- getPages
             mapM_ (putStrLn . unpackPageId . pageId) pages
 
-    dumpPageQids = 
+    dumpPageQids =
         f <$> pagesFromFile
       where
         f getPages = do
@@ -166,18 +166,18 @@ opts = subparser
             if useSection then
               mapM_ (\p -> putStrLn $ unlines $ sectionQueries p ) pages
             else
-              mapM_ (\p -> putStrLn $ pageQueries p) pages 
+              mapM_ (\p -> putStrLn $ pageQueries p) pages
 
         pageQueries :: CAR.Page -> String
         pageQueries page =
           let qid = unpackPageId $ pageId page
               qtext = unpackPageName $ pageName page
-          in qid <> "\t" <> qtext    
+          in qid <> "\t" <> qtext
 
         sectionQueries :: CAR.Page -> [String]
-        sectionQueries page  = 
+        sectionQueries page  =
           [ escapeSectionPath sectionPath <> "\t"
-            <> (unpackPageName $ pageName page) 
+            <> (unpackPageName $ pageName page)
             <> " " <> T.unpack (T.intercalate " " (fmap getSectionHeading headingList) )
           | (sectionPath, headingList, _) <- pageSections page
           ]
@@ -223,7 +223,7 @@ opts = subparser
 
     dumpInfoboxes =
         f <$> pagesFromFile
-          
+
       where
         f :: IO [CAR.Page] -> IO ()
         f getPages = do
@@ -248,11 +248,11 @@ opts = subparser
             infoboxToText :: CAR.Page -> CAR.PageSkeleton -> Maybe TL.Text
             infoboxToText page (CAR.Infobox  title keyValues) = Just $ TL.unlines $
                 [ ""
-                , "Page:" <> (TL.pack $ unpackPageName $ pageName page)  
-                , "[" <> TL.fromStrict title  <> "]" ] 
+                , "Page:" <> (TL.pack $ unpackPageName $ pageName page)
+                , "[" <> TL.fromStrict title  <> "]" ]
                 ++ fmap toText keyValues
               where toText :: (T.Text, [CAR.PageSkeleton]) -> TL.Text
-                    toText (key, skels) = 
+                    toText (key, skels) =
                       let key' :: TL.Text
                           key' = TL.fromStrict key
                           vals' :: [TL.Text]
@@ -386,18 +386,21 @@ opts = subparser
 
 readFilteredPages :: S.Set CAR.PageName    -- ^ set of page names to read
                   -> S.Set CAR.PageId    -- ^ set of page names to read
+                  -> HS.HashSet CAR.PageName
                   -> S.Set CAR.WikiDataId
                   -> CAR.PageBundle          -- ^ pages or outlines file
                   -> [CAR.Page]
-readFilteredPages pageNames pageIds qids pageBundle =
+readFilteredPages pageNames pageIds redirects qids pageBundle =
    if S.null pageNames && S.null pageIds && S.null qids  then
      CAR.bundleAllPages pageBundle
    else
-     let pageIds' = S.unions [
-                   pageIds 
+     let pageIds' = S.unions ([
+                   pageIds
                   , (CAR.bundleLookupAllPageNames pageBundle) pageNames
                   , (CAR.bundleLookupAllWikidataQids pageBundle) qids
-                  ]
+                  ] <>
+                  mapMaybe (CAR.bundleLookupRedirect pageBundle) (HS.toList redirects)
+                  )
      in mapMaybe (CAR.bundleLookupPage pageBundle) (S.toList  pageIds')
 
 pagesFromFile :: Parser (IO [CAR.Page])
@@ -408,7 +411,7 @@ allPagesFromFile =
     f <$> argument str (help "input file" <> metavar "FILE")
   where
     f :: FilePath -> IO [CAR.Page]
-    f inputFile = do 
+    f inputFile = do
         CAR.readPagesOrOutlinesAsPages inputFile
 
 
@@ -416,6 +419,7 @@ filteredPagesFromFile :: Parser (IO [CAR.Page])
 filteredPagesFromFile =
     f <$> argument str (help "input file" <> metavar "FILE")
       <*> fmap S.fromList (many (option  (packPageName  <$> str) (short 'p' <> long "page" <> metavar "PAGE NAME" <> help "Page name to dump or nothing to dump all")))
+      <*> optional (option str (long "pagenames-from-file" <> metavar "FILE" <> help "like --page but reads all entries from a file instead of being passed in as arguments"))
       <*> fmap S.fromList (many (option  (packPageId  <$> str) (short 'P' <> long "pageid" <> metavar "PAGE ID " <> help "Page id to dump or nothing to dump all")))
       <*> many (option (packPageName <$> str) (long "target" <> short 't' <> help "dump only pages with links to this target page name (and the page itself)"))      <*> ( HS.fromList <$> many (option (packPageId <$> str) (long "targetids" <> short 'T'  <> help "dump only pages with links to this target page id (and the page itself)")))
       <*> ( HS.fromList <$> many (option (packPageName <$> str)  (long "redirect" <> short 'r' <> help "dump only pages with redirects from this page name")))
@@ -429,26 +433,32 @@ filteredPagesFromFile =
         Nothing -> fail $ "Invalid WikiDataId: " <> T.unpack s
         Just x -> return x
 
-    f :: FilePath 
-      -> S.Set CAR.PageName 
-      -> S.Set CAR.PageId -> [CAR.PageName] 
-      -> HS.HashSet CAR.PageId 
-      -> HS.HashSet CAR.PageName 
+    f :: FilePath
+      -> S.Set CAR.PageName
       -> Maybe FilePath
-      -> S.Set CAR.WikiDataId  
+      -> S.Set CAR.PageId -> [CAR.PageName]
+      -> HS.HashSet CAR.PageId
+      -> HS.HashSet CAR.PageName
+      -> Maybe FilePath
+      -> S.Set CAR.WikiDataId
       -> Maybe FilePath
       -> IO [CAR.Page]
-    f inputFile pageNames pageIds targetPageNames1 targetPageIds2 redirectPageNames redirectsFile qids qidsFile= do
+    f inputFile pageNames pageNamesFile pageIds targetPageNames1 targetPageIds2 redirectPageNames redirectsFile qids qidsFile= do
         pageBundle <- CAR.openPageBundle inputFile
+        pageNames' <-
+          case pageNamesFile of
+            Just f ->  S.fromList <$> fromFile convPageName f
+            Nothing -> return pageNames
+
         redirectTargets' <-
           case redirectsFile of
             Just f ->  HS.fromList <$> fromFile convPageName f
-            Nothing -> return redirectPageNames 
+            Nothing -> return redirectPageNames
 
         qidTargets' <-
           case qidsFile of
             Just f ->  S.fromList . catMaybes <$> fromFile convQid f
-            Nothing -> return qids 
+            Nothing -> return qids
               :: IO (S.Set CAR.WikiDataId)
 
         let targetPageIds1 = S.toList $ CAR.bundleLookupAllPageNames pageBundle targetPageNames1
@@ -478,9 +488,9 @@ filteredPagesFromFile =
                         -> qid `S.member` qids
                    | otherwise -> False
 
-            pages = readFilteredPages pageNames pageIds qidTargets' pageBundle
-        return $ filter (qidTargets qidTargets')
-               $ filter (redirectTargets redirectTargets')
+            pages = readFilteredPages pageNames' pageIds redirectTargets' qidTargets' pageBundle
+        return -- $ filter (qidTargets qidTargets')
+               -- $ filter (redirectTargets redirectTargets')
                $ filter (searchTargets targetPageIds) pages
 
 
@@ -488,7 +498,7 @@ filteredPagesFromFile =
     fromFile :: (BSL.ByteString -> a ) ->  FilePath -> IO [a]
     fromFile conv filePath = do
         contents <- BSL.readFile filePath
-                 :: IO BSL.ByteString 
+                 :: IO BSL.ByteString
         return $ map conv $ BSL.lines contents
 
     convPageName :: (BSL.ByteString -> PageName )
@@ -522,12 +532,12 @@ dumpConvertPageIds =
     convertPageIds :: CAR.PageBundle -> CAR.PageName -> Either String (CAR.PageId, CAR.PageName)
     convertPageIds pageBundle pageName =
       case CAR.bundleLookupPageName pageBundle pageName of
-        Just pageIdSet | not $ S.null pageIdSet 
+        Just pageIdSet | not $ S.null pageIdSet
           -> let newPageId = head $ S.toList pageIdSet
              in Right $ (newPageId, pageName)
-        Nothing -> 
+        Nothing ->
           case CAR.bundleLookupRedirect pageBundle pageName of
-            Just pageIdSet | not $ S.null pageIdSet 
+            Just pageIdSet | not $ S.null pageIdSet
               -> let newPageId = head $ S.toList pageIdSet
                 in Right $ (newPageId, pageName)
             _ -> Left $ "Not found: "<> show pageName
@@ -545,7 +555,7 @@ dumpFutureConvertPageIds =
         bundle16 <- CAR.openPageBundle wiki16InputFile
         titleList <- fmap (packPageName . TL.unpack) <$> TL.lines <$> TL.readFile titlesToConvert
 
-        let (lookups16,titleList') 
+        let (lookups16,titleList')
                       = partition (isJust . snd)
                       $ look bundle16 titleList
             missingTitles2016 = fmap fst titleList'
@@ -557,26 +567,26 @@ dumpFutureConvertPageIds =
                 Nothing -> return ([],missingTitles2016)
                 Just wiki20InputFile -> do
                       bundle20 <- CAR.openPageBundle wiki20InputFile
-                      let (lookups20,missingTitles') 
+                      let (lookups20,missingTitles')
                                     = partition (isJust . snd)
                                     $ look bundle20 missingTitles2016
 
-                          missingTitles = fmap fst missingTitles'          
+                          missingTitles = fmap fst missingTitles'
 
                       putStrLn $ "Found "<> (show $ length lookups20) <> " pages in given future CBOR"
-                      
-                      let converted16 = 
+
+                      let converted16 =
                             [ (orig, maybeSet page16IdSet)
                               | (orig, Just page20IdSet) <-lookups20
                               , let page16IdSet = downgradePageId bundle16 bundle20 page20IdSet
-                              ]     
+                              ]
                             where maybeSet :: S.Set a -> Maybe (S.Set a)
                                   maybeSet set =
-                                    if S.null set 
+                                    if S.null set
                                       then Nothing
                                       else Just set
-                          (converted16', missingConverted) = partition (isJust . snd) converted16     
-                          missingConverted' = fmap fst missingConverted       
+                          (converted16', missingConverted) = partition (isJust . snd) converted16
+                          missingConverted' = fmap fst missingConverted
 
                       putStrLn $ "Converted "<> (show $ length converted16') <> " from future CBOR pages"
                       putStrLn ""
@@ -584,33 +594,33 @@ dumpFutureConvertPageIds =
                       putStrLn ""
 
                       return $ (converted16', missingTitles)
-        
+
         T.putStrLn $ "Page titles unresolvable in future or target bundle: " <> (T.unlines $ fmap (T.pack . unpackPageName ) missingTitles)
 
         let total16 = lookups16 <> converted16
 
         putStrLn $ ""
-        TL.writeFile outputFile 
-          $  TL.unlines 
-          $ [ (TL.pack $ unpackPageId id) <> "\t" <> (TL.pack $ unpackPageName orig)  
+        TL.writeFile outputFile
+          $  TL.unlines
+          $ [ (TL.pack $ unpackPageId id) <> "\t" <> (TL.pack $ unpackPageName orig)
             | (orig, Just ids) <- total16, id <- S.toList ids
             ]
 
-        
-    look :: CAR.PageBundle -> [CAR.PageName] -> [(CAR.PageName, Maybe (S.Set CAR.PageId))] 
+
+    look :: CAR.PageBundle -> [CAR.PageName] -> [(CAR.PageName, Maybe (S.Set CAR.PageId))]
     look bundle titleList =
       [ (title, titleOpt <|> redirectOpt )
-        | title <- titleList  
+        | title <- titleList
         , let titleOpt = CAR.bundleLookupPageName bundle title
               redirectOpt = CAR.bundleLookupRedirect bundle title
       ]
 
     downgradePageId :: CAR.PageBundle -> CAR.PageBundle -> S.Set CAR.PageId -> S.Set CAR.PageId
     downgradePageId bundle16 bundle20 pageIds20 =
-          S.unions 
+          S.unions
             $ [ CAR.bundleLookupAllPageNames bundle16
                 $ fromMaybe [] $ getMetadata _RedirectNames $ pageMetadata  page20
-                        
+
             | pageId20 <- S.toList pageIds20
             , Just page20 <- pure $ CAR.bundleLookupPage bundle20 pageId20
             ]
