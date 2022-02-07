@@ -28,6 +28,7 @@ import Data.Aeson as Aeson
 import Data.Aeson.Types as Aeson
 
 import CAR.Types
+import qualified Data.Aeson.Encoding as Aeson
 
 t :: T.Text -> T.Text
 t = id
@@ -85,6 +86,10 @@ k_PROV_SOURCE_NAME = "source_name"
 k_PROV_SITE_COMMENTS = "site_comments" 
 
 
+k_SECTIONPATH_ID = "section_path_id"
+k_SECTIONPATH_HEADINGS = "section_path_headings"
+
+
 -- | Serialized newtype for JSON representation
 newtype S a = S a
     deriving (Show)
@@ -96,6 +101,34 @@ unwrapS :: Functor f => f (S a) -> f a
 unwrapS xs = fmap (\(S a) -> a) xs
 
 
+-------- PageId and PageName  ----------
+
+instance Aeson.ToJSON (S PageId) where
+    toJSON (S pid) = toJSON $ unpackPageId pid
+    toEncoding (S pid) = toEncoding $ unpackPageId pid
+
+instance Aeson.FromJSON (S PageId) where
+    parseJSON = Aeson.withText "S PageId" $ \content ->
+        pure $ S (packPageId $ T.unpack content)
+
+instance Aeson.ToJSON (S PageName) where
+    toJSON (S name) = toJSON $ unpackPageName name
+    toEncoding (S name) = toEncoding $ unpackPageName name
+
+instance Aeson.FromJSON (S PageName) where
+    parseJSON = Aeson.withText "S PageName" $ \content ->
+        pure $ S (packPageName $ T.unpack content)
+
+instance Aeson.ToJSON (S ParagraphId) where
+    toJSON (S name) = toJSON $ unpackParagraphId name
+    toEncoding (S name) = toEncoding $ unpackParagraphId name
+
+instance Aeson.FromJSON (S ParagraphId) where
+    parseJSON = Aeson.withText "S ParagraphId" $ \content ->
+        pure $ S (packParagraphId $ T.unpack content)
+
+
+----------- Link -----------------
 instance Aeson.ToJSON (S Link) where
     toJSON (S Link {..})=
         object
@@ -363,6 +396,19 @@ instance Aeson.FromJSON (S Page) where
 
         return $ S (Page {..})
 
+------------ SectionPath -------
+instance Aeson.ToJSON (S SectionPath) where
+    toJSON (S SectionPath{..}) =
+        object 
+        $ [ k_SECTIONPATH_ID .= sectionPathPageId
+          , k_SECTIONPATH_HEADINGS .= map (S . unpackHeadingId) sectionPathHeadings
+          ]
+
+instance Aeson.FromJSON (S SectionPath) where
+    parseJSON = Aeson.withObject "S SectionPath" $ \content -> do
+                S sectionPathPageId <- content Aeson..: k_SECTIONPATH_ID
+                sectionPathHeadings <- map packHeadingId . unwrapS  <$> content Aeson..: k_SECTIONPATH_HEADINGS
+                return $ S (SectionPath {..})
 
 ----------- Provenance ------
 
