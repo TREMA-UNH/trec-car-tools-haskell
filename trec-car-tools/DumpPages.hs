@@ -554,7 +554,6 @@ dumpConvertWikidataQIDs :: Parser (IO ())
 dumpConvertWikidataQIDs =
     f <$> argument str (help "input file" <> metavar "CBOR-FILE")
       <*> argument str (help "file with page names for conversion (one line per page)" <> metavar "Name-File")
-      -- <*> flag False True (short 'r' <> long "with-redirects" <> help "also look in redirect names")
   where
     f :: FilePath -> FilePath -> IO ()
     f inputFile nameFile = do

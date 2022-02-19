@@ -27,8 +27,10 @@ import CAR.Types
 import qualified Codec.CBOR.Read as CBOR.Read
 import qualified Codec.Serialise as CBOR
 import qualified Data.ByteString.Lazy as BSL
+import qualified Data.ByteString.Lazy.Char8 as BSL
 import System.FilePath
 import Data.Maybe
+import Data.List (intercalate)
 import CAR.Utils (getWikidataQid)
 
 newtype NameToIdMap = NameToIdMap (M.Map PageName (S.Set PageId))
@@ -75,6 +77,17 @@ createRInfoToQidMap transform extension cborPath = do
     index <- buildRInfoToQidMap transform cborPath
     BSL.writeFile indexPath $ CBOR.serialise index
   where indexPath = cborPath <.> extension
+
+
+createRInfoToQidMapTsv :: (Page -> [PageName]) -> String -> FilePath -> IO ()
+createRInfoToQidMapTsv transform extension cborPath = do
+    index <- buildRInfoToQidMap transform cborPath
+    let NameToQidMap m = index
+        entries = [ intercalate "\t" $ [unpackPageName pageName'] <> fmap show (S.toList qids)
+                  | (pageName' , qids) <- M.toList m
+                  ]
+    writeFile indexPath $ unlines $ entries
+  where indexPath = cborPath <.> "qid-names.tsv"
 
 
 
@@ -148,8 +161,9 @@ createNameToIdMap = createInfoToIdMap  (\p -> [pageName p]) "name"
 createRedirectToIdMap :: FilePath -> IO ()
 createRedirectToIdMap = createInfoToIdMap  page2redirect  "redirect"
 
-createRNameToQidMap :: FilePath -> IO ()
-createRNameToQidMap = createRInfoToQidMap  (\p -> [pageName p] <> page2redirect p) "qid2name"
+createRNameToQidMap :: Bool ->  FilePath  -> IO ()
+createRNameToQidMap False = createRInfoToQidMap  (\p -> [pageName p] <> page2redirect p) "qid2name"
+createRNameToQidMap True = createRInfoToQidMapTsv  (\p -> [pageName p] <> page2redirect p) "qid2name"
 
 
 page2redirect :: Page -> [PageName]

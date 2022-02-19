@@ -24,28 +24,31 @@ mode = subparser
     <> command "qid-names" (info (helper <*> indexQidPageNames) fullDesc)
     <> command "all" (info (helper <*> indexAll) fullDesc)
   where
+    articlesFile = argument str (help "articles cbor file" <> metavar "FILE")
     indexPages =
-        void . Toc.createIndex pageId <$> argument str (help "articles cbor file" <> metavar "FILE")
+        void . Toc.createIndex pageId <$> articlesFile
     indexStubs =
         void . Toc.createIndex stubPageId <$> argument str (help "outlines cbor file" <> metavar "FILE")
     indexParagraphs =
         void . Toc.createIndex paraId <$> argument str (help "paragraphs cbor file" <> metavar "FILE")
     indexPageNames =
-        void . NameIdx.createNameToIdMap <$> argument str (help "articles cbor file" <> metavar "FILE")
+        NameIdx.createNameToIdMap <$> articlesFile
     indexPageRedirects =
-        void . NameIdx.createRedirectToIdMap <$> argument str (help "articles cbor file" <> metavar "FILE")
+        NameIdx.createRedirectToIdMap <$> articlesFile
     indexPageQids =
-        void . NameIdx.createQidToIdMap <$> argument str (help "articles cbor file" <> metavar "FILE")
+        NameIdx.createQidToIdMap <$> articlesFile
     indexQidPageNames =
-        void . NameIdx.createRNameToQidMap <$> argument str (help "articles cbor file" <> metavar "FILE")
+        NameIdx.createRNameToQidMap
+            <$> flag False True (short 't' <> long "tsv" <> help "produce output in TSV format")
+            <*> articlesFile
     indexAll =
-        f <$> argument str (help "articles cbor file" <> metavar "FILE")
+        f <$> articlesFile
       where f inputFile = do
                 void $ Toc.createIndex pageId inputFile
-                void $ NameIdx.createRNameToQidMap inputFile
-                void $ NameIdx.createRedirectToIdMap inputFile
-                void $ NameIdx.createQidToIdMap inputFile
-                void $ NameIdx.createRNameToQidMap inputFile
+                NameIdx.createNameToIdMap inputFile
+                NameIdx.createRedirectToIdMap inputFile
+                NameIdx.createQidToIdMap inputFile
+                NameIdx.createRNameToQidMap False inputFile
 
 
 main :: IO ()
