@@ -9,6 +9,7 @@ import qualified Data.Text.Lazy as TL
 import qualified Data.Set as S
 import Data.List
 import CAR.Types
+import CAR.Types (WikiDataId(WikiDataId))
 
 
 unionsWith :: (Foldable g, Eq k, Hashable k)  => (v -> v -> v) -> g (HM.HashMap k v) -> HM.HashMap k v
@@ -152,3 +153,7 @@ nubWithKey f list = go mempty list
       | otherwise             = x : go (S.insert (f x) seen) xs
     go _ [] = []
 
+
+getWikidataQid :: Page -> Maybe WikiDataId
+getWikidataQid page@Page{pageMetadata = meta} =
+    getMetadata _WikiDataQID meta

@@ -1,9 +1,10 @@
 {-# LANGUAGE MultiWayIf #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE PartialTypeSignatures #-}
 
 module Main where
 import Control.Monad
-import Data.List (partition, intersperse)
+import Data.List (partition, intersperse, intercalate)
 import Data.Maybe
 
 import qualified Data.Set as S
@@ -72,7 +73,7 @@ import qualified CAR.Types.AST as CAR
       Paragraph(Paragraph),
       SectionHeading(SectionHeading),
       PageId,
-      PageName(PageName) )
+      PageName(PageName), MetadataItem (WikiDataQID) )
 import qualified CAR.Types.AST.Pretty as CAR ( LinkStyle )
 import qualified CAR.Types.Files as CAR
     ( readPagesOrOutlinesAsPages, Header )
@@ -82,6 +83,8 @@ import Prelude hiding (negate)
 import qualified Codec.Serialise.Decoding as T
 import qualified Data.Text.Encoding as T
 import qualified Data.Text.Lazy.Encoding as TL
+import qualified Data.Map as M
+import CAR.NameToIdMap (NameToQidMap (..))
 
 opts :: Parser (IO ())
 opts = subparser
@@ -106,6 +109,7 @@ opts = subparser
     <> cmd "infobox"  dumpInfoboxes
     <> cmd "convert-page-ids"  dumpConvertPageIds
     <> cmd "future-convert-page-ids"  dumpFutureConvertPageIds
+    <> cmd "convert-page-qids"  dumpConvertWikidataQIDs
   where
     cmd name action = command name (info (helper <*> action) fullDesc)
     dumpHeader =
@@ -541,6 +545,45 @@ dumpConvertPageIds =
               -> let newPageId = head $ S.toList pageIdSet
                 in Right $ (newPageId, pageName)
             _ -> Left $ "Not found: "<> show pageName
+        _ ->
+            Left $ "No page information available"
+
+
+
+dumpConvertWikidataQIDs :: Parser (IO ())
+dumpConvertWikidataQIDs =
+    f <$> argument str (help "input file" <> metavar "CBOR-FILE")
+      <*> argument str (help "file with page names for conversion (one line per page)" <> metavar "Name-File")
+      -- <*> flag False True (short 'r' <> long "with-redirects" <> help "also look in redirect names")
+  where
+    f :: FilePath -> FilePath -> IO ()
+    f inputFile nameFile = do
+        pageNamesToFind <- map CAR.PageName . T.lines <$> DataTextIO.readFile nameFile
+        pageBundle <- CAR.openPageBundle inputFile
+
+        let result = fmap (convertQIDs pageBundle) pageNamesToFind
+        hPutStrLn stderr $ unlines [ msg | Left msg <- result]
+        putStrLn $ unlines 
+                 [ unpackPageName oldPageName <> "\t"<> (intercalate "\t" (fmap show qids))
+                 | Right (oldPageName, qids) <- result
+                 ]
+
+    convertQIDs :: CAR.PageBundle -> CAR.PageName -> Either String (CAR.PageName, [CAR.WikiDataId])
+    convertQIDs pageBundle pageName =
+      let --name2qid :: (M.Map PageName (S.Set WikiDataId) -- NameToQidMap
+          (NameToQidMap name2qid) = CAR.bundleNameToQidLookup pageBundle 
+
+      in case pageName `M.lookup` name2qid of
+            Just qidIdSet | not $ S.null qidIdSet
+              -> Right $ (pageName, S.toList qidIdSet)
+            -- Nothing ->
+            --   case CAR.bundleLookupRedirect pageBundle pageName of
+            --     Just pageIdSet | not $ S.null pageIdSet
+            --       -> let qid = head $ S.toList pageIdSet
+            --         in Right $ (qid, pageName)
+            --     _ -> Left $ "Not found: "<> show pageName
+            _ ->
+                Left $ "No qid information available for page name "<> show pageName
 
 
 dumpFutureConvertPageIds :: Parser (IO())

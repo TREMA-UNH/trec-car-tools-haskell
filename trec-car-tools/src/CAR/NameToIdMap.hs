@@ -9,11 +9,15 @@ module CAR.NameToIdMap
     , pageNameToAnId
     , pageNamesToIdSet
     , openRedirectToIdMap
+    , openRNameToQidMap
     , openQidToIdMap
     , qidToIdMaybeSet
     , createRedirectToIdMap
     , createQidToIdMap
-    , NameToIdMap
+    , createRNameToQidMap
+    , NameToIdMap (..)
+    , NameToQidMap (..)
+    , QidToIdMap (..)
     ) where
 
 import qualified Data.Map.Strict as M
@@ -25,10 +29,12 @@ import qualified Codec.Serialise as CBOR
 import qualified Data.ByteString.Lazy as BSL
 import System.FilePath
 import Data.Maybe
-import CAR.Types (WikiDataId(WikiDataId))
-import CAR.Types.AST (MetadataItem(WikiDataQID))
+import CAR.Utils (getWikidataQid)
 
 newtype NameToIdMap = NameToIdMap (M.Map PageName (S.Set PageId))
+                    deriving (CBOR.Serialise)
+
+newtype NameToQidMap = NameToQidMap (M.Map PageName (S.Set WikiDataId))
                     deriving (CBOR.Serialise)
 
 newtype QidToIdMap = QidToIdMap (M.Map WikiDataId (S.Set PageId))
@@ -45,12 +51,28 @@ buildInfoToIdMap pageToInfo cborPath = do
           | page <- pages
           , name <- pageToInfo page
           ]
-
-
-
 createInfoToIdMap :: (Page -> [PageName]) -> String -> FilePath -> IO ()
 createInfoToIdMap transform extension cborPath = do
     index <- buildInfoToIdMap transform cborPath
+    BSL.writeFile indexPath $ CBOR.serialise index
+  where indexPath = cborPath <.> extension
+
+
+buildRInfoToQidMap :: (Page -> [PageName]) -> FilePath -> IO (NameToQidMap)
+buildRInfoToQidMap pageToInfo cborPath = do
+    (_, pages) <- readPagesOrOutlinesAsPagesWithProvenance cborPath
+    return
+        $ NameToQidMap
+        $ M.fromListWith (<>)
+        $ [ (name, S.singleton qid)
+          | page <- pages
+          , name <- pageToInfo page
+          , Just qid <- pure $ getWikidataQid page
+          ]
+
+createRInfoToQidMap :: (Page -> [PageName]) -> String -> FilePath -> IO ()
+createRInfoToQidMap transform extension cborPath = do
+    index <- buildRInfoToQidMap transform cborPath
     BSL.writeFile indexPath $ CBOR.serialise index
   where indexPath = cborPath <.> extension
 
@@ -97,10 +119,27 @@ openInfoToIdMap' extension cborPath = do
     onError err =
         error $ "Deserialisation error while deserialising TOC "++show indexPath++": "++show err
 
+openRNameToQidMap' :: String -> FilePath -> IO NameToQidMap
+openRNameToQidMap' extension cborPath = do
+    index <- either onError snd . CBOR.Read.deserialiseFromBytes CBOR.decode
+           <$> BSL.readFile indexPath
+    return index
+  where
+    indexPath = cborPath <.> extension
+    onError err =
+        error $ "Deserialisation error while deserialising TOC "++show indexPath++": "++show err
 
+
+openNameToIdMap :: FilePath -> IO NameToIdMap
 openNameToIdMap = openInfoToIdMap "name"
+openRedirectToIdMap :: FilePath -> IO NameToIdMap
 openRedirectToIdMap = openInfoToIdMap "redirect"
+openQidToIdMap :: FilePath -> IO QidToIdMap
 openQidToIdMap = openInfoToIdMap' "qid"
+
+openRNameToQidMap :: FilePath -> IO NameToQidMap
+openRNameToQidMap = openRNameToQidMap' "qid2name"
+
 
 
 createNameToIdMap :: FilePath -> IO ()
@@ -108,9 +147,13 @@ createNameToIdMap = createInfoToIdMap  (\p -> [pageName p]) "name"
 
 createRedirectToIdMap :: FilePath -> IO ()
 createRedirectToIdMap = createInfoToIdMap  page2redirect  "redirect"
-  where
-    page2redirect :: Page -> [PageName]
-    page2redirect page = (pageName page) : (fromMaybe [] $ getMetadata _RedirectNames (pageMetadata page))
+
+createRNameToQidMap :: FilePath -> IO ()
+createRNameToQidMap = createRInfoToQidMap  (\p -> [pageName p] <> page2redirect p) "qid2name"
+
+
+page2redirect :: Page -> [PageName]
+page2redirect page = (pageName page) : (fromMaybe [] $ getMetadata _RedirectNames (pageMetadata page))
 
 
 createQidToIdMap :: FilePath -> IO ()

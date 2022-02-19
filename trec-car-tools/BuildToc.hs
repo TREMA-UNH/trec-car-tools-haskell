@@ -10,6 +10,7 @@ import CAR.ToolVersion
 import CAR.Types
 import CAR.TocFile as Toc
 import CAR.NameToIdMap as NameIdx
+    ( createNameToIdMap, createRedirectToIdMap, createQidToIdMap, createRNameToQidMap )
 
 
 mode :: Parser (IO ())
@@ -20,6 +21,8 @@ mode = subparser
     <> command "page-names" (info (helper <*> indexPageNames) fullDesc)
     <> command "page-redirects" (info (helper <*> indexPageRedirects) fullDesc)
     <> command "page-qids" (info (helper <*> indexPageQids) fullDesc)
+    <> command "qid-names" (info (helper <*> indexQidPageNames) fullDesc)
+    <> command "all" (info (helper <*> indexAll) fullDesc)
   where
     indexPages =
         void . Toc.createIndex pageId <$> argument str (help "articles cbor file" <> metavar "FILE")
@@ -33,6 +36,16 @@ mode = subparser
         void . NameIdx.createRedirectToIdMap <$> argument str (help "articles cbor file" <> metavar "FILE")
     indexPageQids =
         void . NameIdx.createQidToIdMap <$> argument str (help "articles cbor file" <> metavar "FILE")
+    indexQidPageNames =
+        void . NameIdx.createRNameToQidMap <$> argument str (help "articles cbor file" <> metavar "FILE")
+    indexAll =
+        f <$> argument str (help "articles cbor file" <> metavar "FILE")
+      where f inputFile = do
+                void $ Toc.createIndex pageId inputFile
+                void $ NameIdx.createRNameToQidMap inputFile
+                void $ NameIdx.createRedirectToIdMap inputFile
+                void $ NameIdx.createQidToIdMap inputFile
+                void $ NameIdx.createRNameToQidMap inputFile
 
 
 main :: IO ()
