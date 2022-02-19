@@ -28,10 +28,13 @@ import qualified Codec.CBOR.Read as CBOR.Read
 import qualified Codec.Serialise as CBOR
 import qualified Data.ByteString.Lazy as BSL
 import qualified Data.ByteString.Lazy.Char8 as BSL
+import qualified Data.Text.Lazy as TL
+import qualified Data.Text.Lazy.Encoding as TL
 import System.FilePath
 import Data.Maybe
 import Data.List (intercalate)
 import CAR.Utils (getWikidataQid)
+import qualified Codec.Compression.GZip as GZip
 
 newtype NameToIdMap = NameToIdMap (M.Map PageName (S.Set PageId))
                     deriving (CBOR.Serialise)
@@ -83,11 +86,14 @@ createRInfoToQidMapTsv :: (Page -> [PageName]) -> String -> FilePath -> IO ()
 createRInfoToQidMapTsv transform extension cborPath = do
     index <- buildRInfoToQidMap transform cborPath
     let NameToQidMap m = index
-        entries = [ intercalate "\t" $ [unpackPageName pageName'] <> fmap show (S.toList qids)
+        entries = [ TL.pack $ intercalate "\t" $ [unpackPageName pageName'] <> fmap show (S.toList qids)
                   | (pageName' , qids) <- M.toList m
                   ]
-    writeFile indexPath $ unlines $ entries
-  where indexPath = cborPath <.> "qid-names.tsv"
+    BSL.writeFile indexPath 
+       $ GZip.compressWith (GZip.defaultCompressParams { GZip.compressLevel = GZip.bestSpeed })  
+       $ TL.encodeUtf8
+       $ TL.unlines $ entries
+  where indexPath = cborPath <.> "qid-names.tsv.gz"
 
 
 
