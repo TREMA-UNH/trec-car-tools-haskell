@@ -48,6 +48,7 @@ k_VALUE = "value"
 k_FREQ = "freq"
 k_TARGET_PAGE = "target_page"
 k_TARGET_PAGE_ID = "target_page_id"
+k_TARGET_QID = "target_qid"
 k_TARGET_SECTION  = "target_section"
 k_PARA_ID = "para_id"
 k_PARA_BODY = "para_body"
@@ -136,8 +137,9 @@ instance Aeson.ToJSON (S Link) where
         $ [ k_TEXT .= linkAnchor
          , k_TARGET_PAGE .= linkTarget
          , k_TARGET_PAGE_ID .= linkTargetId
-         ] <>
-         maybe [] (\l -> [ k_TARGET_SECTION .= l]) linkSection
+         ] 
+         <> maybe [] (\l -> [ k_TARGET_SECTION .= l]) linkSection
+         <> maybe [] (\qid -> [ k_TARGET_QID .= qid]) linkTargetQid
 
 
 instance Aeson.FromJSON (S Link) where
@@ -145,6 +147,7 @@ instance Aeson.FromJSON (S Link) where
         linkAnchor <- content Aeson..: k_TEXT
         linkTarget <- content Aeson..: k_TARGET_PAGE
         linkTargetId <- content Aeson..: k_TARGET_PAGE_ID
+        linkTargetQid <- content Aeson..:? k_TARGET_QID
         linkSection <- content Aeson..:? k_TARGET_SECTION
         return $ S (Link {..})
 
@@ -189,6 +192,7 @@ instance Aeson.FromJSON (S ParaBody) where
             Just linkTarget -> do
                 linkTargetId <- content Aeson..: k_TARGET_PAGE_ID
                 linkSection <- content Aeson..:? k_TARGET_SECTION
+                linkTargetQid <- content Aeson..:? k_TARGET_QID
                 return $ S (ParaLink (Link {linkAnchor=txt, ..} ))
 
 

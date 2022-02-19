@@ -85,6 +85,7 @@ import Data.Text.Short (ShortText)
 import qualified Data.Text.Short as Short
 import Data.Char
 
+
 -- import CAR.Types.Orphans ()
 
 
@@ -237,6 +238,7 @@ data Link = Link { linkTarget   :: !PageName
                  , linkSection  :: !(Maybe T.Text)
                  , linkTargetId :: !PageId
                  , linkAnchor   :: !T.Text
+                 , linkTargetQid :: !(Maybe WikiDataId)
                  }
           deriving (Eq, Show, Generic)
 instance CBOR.Serialise Link
