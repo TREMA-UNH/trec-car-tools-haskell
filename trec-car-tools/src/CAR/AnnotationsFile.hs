@@ -74,7 +74,7 @@ data PageBundle = PageBundle { bundleProvenance :: Provenance
                              , bundleToc :: EitherAnnotationsFile
                              , bundleNameLookup ::  NameToIdMap
                              , bundleRedirectLookup ::  NameToIdMap
-                             , bundleNameToQidLookup :: NameToQidMap
+                            --  , bundleNameToQidLookup :: NameToQidMap
                              , bundleCborPath :: FilePath
                              }
 
@@ -84,7 +84,7 @@ openPageBundle cborPath = do
     toc <- openEitherAnnotations cborPath
     nameLookup <- openNameToIdMap cborPath
     qidLookup <- openQidToIdMap cborPath
-    name2QidLookup <- openRNameToQidMap cborPath
+    -- name2QidLookup <- openRNameToQidMap cborPath
     redirectLookup <- openRedirectToIdMap cborPath
     (prov, _) <- readPagesOrOutlinesAsPagesWithProvenance cborPath
     return PageBundle {
@@ -97,7 +97,7 @@ openPageBundle cborPath = do
                , bundleLookupPageName = (nameLookup `pageNameToIdMaybeSet`)
                , bundleLookupWikidataQid = (qidLookup `qidToIdMaybeSet`)
                , bundleLookupRedirect= (redirectLookup `pageNameToIdMaybeSet`)
-               , bundleNameToQidLookup = name2QidLookup
+            --    , bundleNameToQidLookup = name2QidLookup
                }
 {-# NOINLINE openPageBundle #-}
 

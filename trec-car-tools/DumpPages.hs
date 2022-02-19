@@ -109,7 +109,7 @@ opts = subparser
     <> cmd "infobox"  dumpInfoboxes
     <> cmd "convert-page-ids"  dumpConvertPageIds
     <> cmd "future-convert-page-ids"  dumpFutureConvertPageIds
-    <> cmd "convert-page-qids"  dumpConvertWikidataQIDs
+    -- <> cmd "convert-page-qids"  dumpConvertWikidataQIDs
   where
     cmd name action = command name (info (helper <*> action) fullDesc)
     dumpHeader =
@@ -550,39 +550,39 @@ dumpConvertPageIds =
 
 
 
-dumpConvertWikidataQIDs :: Parser (IO ())
-dumpConvertWikidataQIDs =
-    f <$> argument str (help "input file" <> metavar "CBOR-FILE")
-      <*> argument str (help "file with page names for conversion (one line per page)" <> metavar "Name-File")
-  where
-    f :: FilePath -> FilePath -> IO ()
-    f inputFile nameFile = do
-        pageNamesToFind <- map CAR.PageName . T.lines <$> DataTextIO.readFile nameFile
-        pageBundle <- CAR.openPageBundle inputFile
+-- dumpConvertWikidataQIDs :: Parser (IO ())
+-- dumpConvertWikidataQIDs =
+--     f <$> argument str (help "input file" <> metavar "CBOR-FILE")
+--       <*> argument str (help "file with page names for conversion (one line per page)" <> metavar "Name-File")
+--   where
+--     f :: FilePath -> FilePath -> IO ()
+--     f inputFile nameFile = do
+--         pageNamesToFind <- map CAR.PageName . T.lines <$> DataTextIO.readFile nameFile
+--         pageBundle <- CAR.openPageBundle inputFile
 
-        let result = fmap (convertQIDs pageBundle) pageNamesToFind
-        hPutStrLn stderr $ unlines [ msg | Left msg <- result]
-        putStrLn $ unlines 
-                 [ unpackPageName oldPageName <> "\t"<> (intercalate "\t" (fmap show qids))
-                 | Right (oldPageName, qids) <- result
-                 ]
+--         let result = fmap (convertQIDs pageBundle) pageNamesToFind
+--         hPutStrLn stderr $ unlines [ msg | Left msg <- result]
+--         putStrLn $ unlines 
+--                  [ unpackPageName oldPageName <> "\t"<> (intercalate "\t" (fmap show qids))
+--                  | Right (oldPageName, qids) <- result
+--                  ]
 
-    convertQIDs :: CAR.PageBundle -> CAR.PageName -> Either String (CAR.PageName, [CAR.WikiDataId])
-    convertQIDs pageBundle pageName =
-      let --name2qid :: (M.Map PageName (S.Set WikiDataId) -- NameToQidMap
-          (NameToQidMap name2qid) = CAR.bundleNameToQidLookup pageBundle 
+--     convertQIDs :: CAR.PageBundle -> CAR.PageName -> Either String (CAR.PageName, [CAR.WikiDataId])
+--     convertQIDs pageBundle pageName =
+--       let --name2qid :: (M.Map PageName (S.Set WikiDataId) -- NameToQidMap
+--           (NameToQidMap name2qid) = CAR.bundleNameToQidLookup pageBundle 
 
-      in case pageName `M.lookup` name2qid of
-            Just qidIdSet | not $ S.null qidIdSet
-              -> Right $ (pageName, S.toList qidIdSet)
-            -- Nothing ->
-            --   case CAR.bundleLookupRedirect pageBundle pageName of
-            --     Just pageIdSet | not $ S.null pageIdSet
-            --       -> let qid = head $ S.toList pageIdSet
-            --         in Right $ (qid, pageName)
-            --     _ -> Left $ "Not found: "<> show pageName
-            _ ->
-                Left $ "No qid information available for page name "<> show pageName
+--       in case pageName `M.lookup` name2qid of
+--             Just qidIdSet | not $ S.null qidIdSet
+--               -> Right $ (pageName, S.toList qidIdSet)
+--             -- Nothing ->
+--             --   case CAR.bundleLookupRedirect pageBundle pageName of
+--             --     Just pageIdSet | not $ S.null pageIdSet
+--             --       -> let qid = head $ S.toList pageIdSet
+--             --         in Right $ (qid, pageName)
+--             --     _ -> Left $ "Not found: "<> show pageName
+--             _ ->
+--                 Left $ "No qid information available for page name "<> show pageName
 
 
 dumpFutureConvertPageIds :: Parser (IO())
