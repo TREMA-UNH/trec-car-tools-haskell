@@ -18,6 +18,7 @@ module CAR.NameToIdMap
     , NameToIdMap (..)
     , NameToQidMap (..)
     , QidToIdMap (..)
+    , openRNameToQidMap''
     ) where
 
 import qualified Data.Map.Strict as M
@@ -140,11 +141,14 @@ openInfoToIdMap' extension cborPath = do
 
 openRNameToQidMap' :: String -> FilePath -> IO NameToQidMap
 openRNameToQidMap' extension cborPath = do
+    openRNameToQidMap'' (cborPath <.> extension)
+
+openRNameToQidMap'' :: FilePath -> IO NameToQidMap
+openRNameToQidMap'' indexPath = do
     index <- either onError snd . CBOR.Read.deserialiseFromBytes CBOR.decode
            <$> BSL.readFile indexPath
     return index
   where
-    indexPath = cborPath <.> extension
     onError err =
         error $ "Deserialisation error while deserialising TOC "++show indexPath++": "++show err
 
@@ -158,6 +162,7 @@ openQidToIdMap = openInfoToIdMap' "qid"
 
 openRNameToQidMap :: FilePath -> IO NameToQidMap
 openRNameToQidMap = openRNameToQidMap' "qid2name"
+
 
 
 

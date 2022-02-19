@@ -29,6 +29,7 @@ import Data.Aeson.Types as Aeson
 
 import CAR.Types
 import qualified Data.Aeson.Encoding as Aeson
+import CAR.Types.AST (WikiDataId(WikiDataId))
 
 t :: T.Text -> T.Text
 t = id
