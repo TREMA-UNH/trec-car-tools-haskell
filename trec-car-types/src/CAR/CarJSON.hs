@@ -179,8 +179,9 @@ instance Aeson.ToJSON (S ParaBody) where
         $ [ k_TEXT .= linkAnchor
          , k_TARGET_PAGE .= linkTarget
          , k_TARGET_PAGE_ID .= linkTargetId
-         ] <>
-         maybe [] (\l -> [ k_TARGET_SECTION .= l]) linkSection
+         ] 
+         <> maybe [] (\l -> [ k_TARGET_SECTION .= l]) linkSection
+         <> maybe [] (\qid -> [ k_TARGET_QID .= qid]) linkTargetQid
 
 
 instance Aeson.FromJSON (S ParaBody) where
