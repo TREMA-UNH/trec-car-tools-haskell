@@ -241,7 +241,35 @@ data Link = Link { linkTarget   :: !PageName
                  , linkTargetQid :: !(Maybe WikiDataId)
                  }
           deriving (Eq, Show, Generic)
-instance CBOR.Serialise Link
+instance CBOR.Serialise Link where
+    decode = do
+        len <- CBOR.decodeListLen
+        tag <- CBOR.decodeInt
+        when (tag /= 0) $ fail "Serialise(Link): Tag indicates this is not a Link."
+        case len of
+          6 -> do
+              linkTarget <- CBOR.decode
+              linkSection <- CBOR.decode
+              linkTargetId <- CBOR.decode
+              linkAnchor <- CBOR.decode
+              linkTargetQid <- CBOR.decode
+              return Link{..}
+          5 -> do
+              linkTarget <- CBOR.decode
+              linkSection <- CBOR.decode
+              linkTargetId <- CBOR.decode
+              linkAnchor <- CBOR.decode
+              return Link{linkTargetQid=Nothing,..}   
+          _ -> fail "Serialise(Link): Unknown length"
+    encode (Link{..}) =
+           CBOR.encodeListLen 6
+        <> CBOR.encodeInt 0
+        <> CBOR.encode linkTarget
+        <> CBOR.encode linkSection
+        <> CBOR.encode linkTargetId
+        <> CBOR.encode linkAnchor
+        <> CBOR.encode linkTargetQid
+
 instance NFData Link where
     rnf Link{..} = rnf linkSection `seq` ()
 
