@@ -16,7 +16,13 @@ module CAR.QRelFile
 import qualified Data.Text as T
 
 import CAR.Types
-import SimplIR.Format.QRel -- hiding (IsRelevant(..))
+import SimplIR.Format.QRel
+    ( IsRelevant(..),
+      GradedRelevance(..),
+      Entry(Entry),
+      readQRel,
+      writeQRel,
+      RelevanceScale(..) ) -- hiding (IsRelevant(..))
 import CAR.RunFile (parseEntityPassageString, writeEntityPassageString)
 -- Ground truth
 -- data Relevance = Relevant | NonRelevant
