@@ -2,7 +2,7 @@
 
 let
   inherit (nixpkgs.haskell.lib) dontCheck doJailbreak;
-  inherit (nixpkgs.stdenv) lib;
+  inherit (nixpkgs) lib;
 
   all-cabal-hashes =
     let rev = "7482ee903ffef3c31b57bcdea07d455052557d38";
@@ -23,7 +23,7 @@ let
       };
     in trecCarPackages // { inherit trecCarPackages; };
 
-  haskellPackages = nixpkgs.haskell.packages.ghc865.override {
+  haskellPackages = nixpkgs.haskell.packages.ghc8107.override {
     overrides = lib.composeExtensions simplirNix.haskellOverrides haskellOverrides;
   };
 in {

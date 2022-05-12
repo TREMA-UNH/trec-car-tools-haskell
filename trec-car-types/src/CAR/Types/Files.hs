@@ -30,6 +30,7 @@ module CAR.Types.Files
       -- * Header type
     , FileType(..)
     , Header(..)
+    , readCarFileType
     , stubToPage
     , readCarPagesOrOutlineWithProvenance
     ) where
@@ -137,6 +138,12 @@ readCarHeader path = handle tryWithoutHeader (Just . fst <$> readCborList @Heade
     tryWithoutHeader (CborListHeaderDeserialiseError _ _) = do
         hPutStrLn stderr $ "Warning: Failed to deserialise header of "++path++"; provenance unavailable."
         return Nothing
+
+readCarFileType :: FilePath -> IO (Maybe FileType)
+readCarFileType inputFile = do
+    carHeader <- readCarHeader inputFile
+    return $ fmap headerType carHeader
+
 
 writeCarFile :: forall a.
                 (File a, CBOR.Serialise a)

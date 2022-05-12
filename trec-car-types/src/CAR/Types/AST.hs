@@ -26,10 +26,12 @@ module CAR.Types.AST
       -- ** Metadata
     , PageMetadata(..)
     , MetadataField
+    , MetadataItem(..)
     , emptyPageMetadata
     , getMetadata
     , setMetadata
     , clearMetadata
+    , WikiDataId(..)
       -- *** Fields
     , _RedirectNames
     , _DisambiguationNames
@@ -38,12 +40,17 @@ module CAR.Types.AST
     , _CategoryIds
     , _InlinkIds
     , _InlinkAnchors
+    , _PageTags
     , _UnknownMetadata
+    , _WikiDataQID
+    , _WikiSiteId
       -- * Outline documents
     , Stub(..)
       -- * Entity
     , Entity(..)
     , pageIdToName
+      -- * WikiData
+    ,readWikiDataId
     ) where
 
 import Data.Foldable
@@ -62,6 +69,8 @@ import qualified Codec.CBOR.Term as CBOR
 import qualified Data.ByteString.Short as SBS
 import qualified Data.Text as T
 import qualified Data.Text.Encoding as TE
+import qualified Data.Text.Read as TR
+
 import Data.Binary
 import Network.URI
 import Crypto.Hash.SHA1 as SHA
@@ -75,6 +84,7 @@ import qualified Control.Lens as L
 import Data.Text.Short (ShortText)
 import qualified Data.Text.Short as Short
 import Data.Char
+
 
 -- import CAR.Types.Orphans ()
 
@@ -228,9 +238,38 @@ data Link = Link { linkTarget   :: !PageName
                  , linkSection  :: !(Maybe T.Text)
                  , linkTargetId :: !PageId
                  , linkAnchor   :: !T.Text
+                 , linkTargetQid :: !(Maybe WikiDataId)
                  }
           deriving (Eq, Show, Generic)
-instance CBOR.Serialise Link
+instance CBOR.Serialise Link where
+    decode = do
+        len <- CBOR.decodeListLen
+        tag <- CBOR.decodeInt
+        when (tag /= 0) $ fail "Serialise(Link): Tag indicates this is not a Link."
+        case len of
+          6 -> do
+              linkTarget <- CBOR.decode
+              linkSection <- CBOR.decode
+              linkTargetId <- CBOR.decode
+              linkAnchor <- CBOR.decode
+              linkTargetQid <- CBOR.decode
+              return Link{..}
+          5 -> do
+              linkTarget <- CBOR.decode
+              linkSection <- CBOR.decode
+              linkTargetId <- CBOR.decode
+              linkAnchor <- CBOR.decode
+              return Link{linkTargetQid=Nothing,..}   
+          _ -> fail "Serialise(Link): Unknown length"
+    encode (Link{..}) =
+           CBOR.encodeListLen 6
+        <> CBOR.encodeInt 0
+        <> CBOR.encode linkTarget
+        <> CBOR.encode linkSection
+        <> CBOR.encode linkTargetId
+        <> CBOR.encode linkAnchor
+        <> CBOR.encode linkTargetQid
+
 instance NFData Link where
     rnf Link{..} = rnf linkSection `seq` ()
 
@@ -331,6 +370,35 @@ instance CBOR.Serialise PageType where
       where
         simple n = CBOR.encodeListLen 1 <> CBOR.encodeInt n
 
+newtype WikiDataId = WikiDataId Int
+                 deriving (Eq, Ord, Hashable)
+
+instance Show WikiDataId where
+  show (WikiDataId idNumber) = "Q" <> show idNumber
+
+instance FromJSON WikiDataId where
+    parseJSON = withText "WikiDataId" $ maybe (fail "invalid item id") pure . readWikiDataId
+
+instance ToJSON WikiDataId where
+    toJSON = toJSON . show
+
+instance CBOR.Serialise WikiDataId where
+    encode = CBOR.encode . T.pack . show
+    decode = do
+        qidStr <- CBOR.decode
+        case readWikiDataId qidStr of
+          Just qid -> return qid 
+          Nothing -> fail $ "Can't parse Wikidata Qid: " <> show qidStr
+
+
+readWikiDataId :: T.Text -> Maybe WikiDataId
+readWikiDataId s
+  | Just rest <- T.stripPrefix (T.pack "Q") $ T.strip s
+  , Right (n, _) <- TR.decimal rest
+  = Just $ WikiDataId n
+  | otherwise
+  = Nothing
+
 newtype PageMetadata = PageMetadata [MetadataItem]
                      deriving (CBOR.Serialise)
 
@@ -338,8 +406,6 @@ instance Show PageMetadata where
   show (PageMetadata list) =
       unlines $ fmap show' list
     where show' x = "- " ++ show x
-
-
 
 emptyPageMetadata :: PageMetadata
 emptyPageMetadata = PageMetadata []
@@ -352,6 +418,9 @@ data MetadataItem = RedirectNames [PageName]
                   | InlinkIds [PageId]
                   | OldInlinkAnchors [T.Text] -- ^ deprecated
                   | InlinkAnchors (V.Vector (T.Text, Int))
+                  | WikiDataQID WikiDataId
+                  | WikiSiteId SiteId
+                  | PageTags [T.Text]
                   | UnknownMetadata !Int !Int [CBOR.Term]
                   deriving (Show, Generic)
 
@@ -368,6 +437,9 @@ instance CBOR.Serialise MetadataItem where
           5 -> InlinkIds <$> CBOR.decode
           6 -> OldInlinkAnchors <$> CBOR.decode
           7 -> InlinkAnchors <$> CBOR.decode
+          8 -> WikiDataQID <$> CBOR.decode
+          9 -> WikiSiteId <$> CBOR.decode
+          10 -> PageTags <$> CBOR.decode
           _ -> UnknownMetadata len tag <$> replicateM (len-1) CBOR.decodeTerm
 
     encode val =
@@ -380,6 +452,9 @@ instance CBOR.Serialise MetadataItem where
           InlinkIds xs -> simple 5 xs
           OldInlinkAnchors xs -> simple 6 xs
           InlinkAnchors xs -> simple 7 xs
+          WikiDataQID x -> simple 8 x
+          WikiSiteId x -> simple 9 x
+          PageTags tag -> simple 10 tag
           UnknownMetadata len tag y ->
                  CBOR.encodeListLen (fromIntegral len)
               <> CBOR.encodeInt tag

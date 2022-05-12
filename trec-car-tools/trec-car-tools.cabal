@@ -53,6 +53,7 @@ library
                        text,
                        text-short,
                        regex-compat,
+                       zlib >=0.6,
                        simplir,
                        simplir-io,
                        simplir-stop-words,
@@ -84,6 +85,8 @@ executable trec-car-build-toc
                        bytestring >= 0.10,
                        containers,
                        text,
+                       zlib >=0.6,
+                       simplir,
                        trec-car-tools,
                        trec-car-types,
                        optparse-applicative

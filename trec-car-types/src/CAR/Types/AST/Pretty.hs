@@ -62,7 +62,7 @@ prettyParagraph renderLink (Paragraph pid bodies) =
 type LinkStyle = Link -> String
 
 withLink :: LinkStyle
-withLink (Link (PageName name) section _ anchor) =
+withLink Link {linkTarget = (PageName name), linkSection = section, linkAnchor= anchor} =
     "["<>T.unpack anchor<>"]("<>T.unpack name<>msection<>")"
   where
     msection
