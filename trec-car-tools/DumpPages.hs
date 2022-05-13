@@ -334,12 +334,24 @@ opts = subparser
 
     dumpParagraphCorpus =
         f <$> argument str (help "input paragraph file" <> metavar "FILE")
+          <*> optional (option str (short 'f' <> help "filter to ids in this file" <> metavar "TXT") ) 
       where
-        f :: FilePath -> IO ()
-        f inputFile = do
+        f :: FilePath -> Maybe FilePath -> IO ()
+        f inputFile Nothing = do
             paragraphs <- readParagraphsFile inputFile
             let fmtPara para = TL.pack (unpackParagraphId $ paraId para) <> "\t" <> paraToText para
             TL.putStrLn $ TL.unlines $ map fmtPara paragraphs
+        f inputFile (Just para2File) = do
+            paragraphs <- readParagraphsFile inputFile
+            para2Content <- T.lines <$> DataTextIO.readFile para2File
+            let para2 = S.fromList 
+                          $ fmap (packParagraphId . T.unpack )
+                          $ para2Content
+            
+            let fmtPara para = TL.pack (unpackParagraphId $ paraId para) <> "\t" <> paraToText para
+            TL.putStrLn $ TL.unlines $ map fmtPara $ filter (paraInSet para2) $ paragraphs
+        paraInSet paraFilter paragraph =
+          paraId paragraph `S.member` paraFilter
 
     dumpParagraphIds =
         f <$> argument str (help "input paragraph file" <> metavar "FILE")
@@ -660,8 +672,9 @@ dumpFutureConvertPageIds =
         putStrLn $ ""
         TL.writeFile outputFile
           $  TL.unlines
-          $ [ (TL.pack $ unpackPageId id) <> "\t" <> (TL.pack $ unpackPageName orig)
-            | (orig, Just ids) <- total16, id <- S.toList ids
+          $ [ (TL.pack $ unpackPageId id') <> "\t" <> (TL.pack $ unpackPageName orig)
+            | (orig, Just ids) <- total16
+            , id' <- S.toList ids
             ]
 
 
