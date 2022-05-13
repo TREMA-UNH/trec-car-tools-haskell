@@ -85,6 +85,7 @@ import qualified Data.Text.Encoding as T
 import qualified Data.Text.Lazy.Encoding as TL
 import qualified Data.Map as M
 import CAR.NameToIdMap (NameToQidMap (..))
+import qualified Prelude as Data.Text.IO
 
 opts :: Parser (IO ())
 opts = subparser
@@ -98,7 +99,8 @@ opts = subparser
     <> cmd "paragraphs"    dumpParagraphs
     <> cmd "paragraph-corpus" dumpParagraphCorpus
     <> cmd "paragraphids"  dumpParagraphIds
-    <> cmd "filter-paragraphids"  filterParagraphIds
+    <> cmd "filter-paragraphids"  filterParagraphIdsByCbor
+    <> cmd "filter-paragraphids-by-file"  filterParagraphIdsByFile
     <> cmd "paragraphids-pages"  paragraphIdsInPages
     <> cmd "section-ids"      dumpSectionIds
     <> cmd "outlines"      dumpOutlines
@@ -347,9 +349,9 @@ opts = subparser
                 paragraphs <- readParagraphsFile inputFile
                 putStrLn $ unlines $ map (unpackParagraphId . paraId) paragraphs
 
-    filterParagraphIds =
+    filterParagraphIdsByCbor =
         f <$> argument str (help "input paragraph file" <> metavar "FILE")
-          <*> option (TocFile.IndexedCborPath <$> str) (long "para2" <> help "dump only paragraph ids that are also in this file")
+          <*> option (TocFile.IndexedCborPath <$> str) (long "para2" <> help "dump only paragraph ids that are also in this CBOR file")
           <*> switch (short 'n' <> long "negate" <> help "invert matching logic")
       where
         f :: FilePath -> TocFile.IndexedCborPath CAR.ParagraphId CAR.Paragraph -> Bool -> IO ()
@@ -357,6 +359,20 @@ opts = subparser
                 paragraphs <- readParagraphsFile inputFile
                 para2 <- TocFile.open para2File
                 let paragraphs' = filter (\ (CAR.Paragraph pid _) ->  negate /= isJust (TocFile.lookup pid para2) ) paragraphs
+                putStrLn $ unlines $ map (unpackParagraphId . paraId) paragraphs'
+
+    filterParagraphIdsByFile =
+        f <$> argument str (help "input paragraph file" <> metavar "FILE")
+          <*> option str (long "para2" <> help "dump only paragraph ids that are also in this file (one line per para id)")
+      where
+        f :: FilePath -> FilePath -> IO ()
+        f inputFile para2File = do
+                paragraphs <- readParagraphsFile inputFile
+                para2Content <- T.lines <$> DataTextIO.readFile para2File
+                let para2 = S.fromList 
+                             $ fmap (packParagraphId . T.unpack )
+                             $ para2Content
+                let paragraphs' = filter (\ (CAR.Paragraph pid _) ->  (pid `S.member` para2) ) paragraphs
                 putStrLn $ unlines $ map (unpackParagraphId . paraId) paragraphs'
 
     histogramHeadings =
