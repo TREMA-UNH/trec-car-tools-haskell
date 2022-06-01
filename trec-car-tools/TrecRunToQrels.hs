@@ -79,11 +79,14 @@ data ExportFormat = ExportQrels | ExportRun
 pageLevelRuns2Qrels :: ([PageId] -> TrecRunFile.QueryId -> SectionPath) -> FilePath -> FilePath -> ExportFormat -> IO ()
 pageLevelRuns2Qrels stringToSectionPath inputRunFile outputRunFile exportFormat = do
     rankings <- readParagraphRun inputRunFile
+    let topK = case exportFormat of
+                ExportQrels -> 50
+                ExportRun -> 1000    
     let filteredRunScores :: [(Double, CAR.Annotation IsRelevant)]
         filteredRunScores =
             [ (carScore, CAR.Annotation sectionPath paragraphId Relevant)
             |  CAR.RankingEntry{carRank=rank,carQueryId=qId, carDocument=paragraphId,..} <- rankings
-            , rank <= 50
+            , rank <= topK
             , let sectionPath = stringToSectionPath [] $ unQueryId qId
             ]
 
@@ -97,6 +100,9 @@ pageLevelRuns2Qrels stringToSectionPath inputRunFile outputRunFile exportFormat 
 sectionLevelRuns2Qrels :: ([PageId] -> TrecRunFile.QueryId -> SectionPath) -> FilePath -> FilePath -> FilePath -> ExportFormat -> IO ()
 sectionLevelRuns2Qrels stringToSectionPath inputRunFile outlinesFile outputRunFile exportFormat = do
     outlines <- readOutlinesFile outlinesFile
+    let topK = case exportFormat of
+                ExportQrels -> 50
+                ExportRun -> 1000
     let titles =
             [ queryId
             | Stub{stubPageId=queryId} <- outlines
@@ -106,7 +112,7 @@ sectionLevelRuns2Qrels stringToSectionPath inputRunFile outlinesFile outputRunFi
         aggregateQrel =
             [ ( titleQuery, [(annotation, 1.0/ realToFrac rank)])
             |  CAR.RankingEntry{carRank=rank ,carQueryId=qId, carDocument=paragraphId, ..} <- rankings
-            , rank <= 50
+            , rank <= topK
             , let SectionPath titleQuery _heading = stringToSectionPath titles $ unQueryId qId
                   titlePath = SectionPath titleQuery []
             , let annotation = CAR.Annotation titlePath paragraphId Relevant
@@ -116,7 +122,7 @@ sectionLevelRuns2Qrels stringToSectionPath inputRunFile outlinesFile outputRunFi
             [ Ranking.toSortedList rankedQrels
                 | (_key, entryList) <-  HM.toList  $ HM.fromListWith (++) aggregateQrel
                 , let aggregateScores = HM.fromListWith (+) entryList
-                , let rankedQrels = Ranking.fromListK 50 $ fmap (\(a,b) -> (b,a)) $ HM.toList aggregateScores
+                , let rankedQrels = Ranking.fromListK topK $ fmap (\(a,b) -> (b,a)) $ HM.toList aggregateScores
             ]
 
 
