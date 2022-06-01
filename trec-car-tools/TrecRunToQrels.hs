@@ -35,16 +35,20 @@ mode = subparser
     outputRunFile = option str (long "output" <> short 'o' <> help "Output run file" <> metavar "RUNFILE")
     inputRunFile = argument str (help "Input run file" <> metavar "RUNFILE")
     outlinesFile = option str (help "Outlines files" <> short 's' <> long "outlines" <> metavar "STUB")
+    exportFormat =  flag' ExportQrels  (short 'q' <> long "export-qrels" <> help "Export as Qrels format")
+                 <|> flag' ExportRun   (short 'r' <> long "export-run" <> help "Export as Run file format")
     pageLevelRuns =
         pageLevelRuns2Qrels  stringToPageId
             <$> inputRunFile
             <*> outputRunFile
+            <*> exportFormat
 
     sectionLevelRuns =
         sectionLevelRuns2Qrels stringToSectionHeading
             <$> inputRunFile
             <*> outlinesFile
             <*> outputRunFile
+            <*> exportFormat
 
     stringToSectionHeading pageIds name =
         head $ mapMaybe (\pi -> split pi name) pageIds
@@ -56,23 +60,11 @@ mode = subparser
                         then
                             let heading  = drop (length pageId') name'
                             in Just $ SectionPath {sectionPathPageId=pageId, sectionPathHeadings = [packHeadingId heading] }
-                        else Nothing    
+                        else Nothing
 
     stringToPageId _pageIds name =
         SectionPath { sectionPathPageId = packPageId $ T.unpack name, sectionPathHeadings = [] }
 
-
-pageLevelRuns2Qrels :: ([PageId] -> TrecRunFile.QueryId -> SectionPath) -> FilePath -> FilePath -> IO ()
-pageLevelRuns2Qrels stringToSectionPath inputRunFile outputRunFile = do
-    rankings <- readParagraphRun inputRunFile
-    let filteredQrels :: [CAR.Annotation IsRelevant]
-        filteredQrels = 
-            [ CAR.Annotation sectionPath paragraphId Relevant
-            |  CAR.RankingEntry{carRank=rank,carQueryId=qId, carDocument=paragraphId,..} <- rankings
-            , rank <= 50
-            , let sectionPath = stringToSectionPath [] $ unQueryId qId
-            ]
-    writeParagraphQRel outputRunFile filteredQrels
 
 
 instance Hashable a => Hashable (Annotation a) where
@@ -80,8 +72,30 @@ instance Hashable a => Hashable (Annotation a) where
         hashWithSalt salt (sectionPath, paraId, isRel)
 
 
-sectionLevelRuns2Qrels :: ([PageId] -> TrecRunFile.QueryId -> SectionPath) -> FilePath -> FilePath -> FilePath -> IO ()
-sectionLevelRuns2Qrels stringToSectionPath inputRunFile outlinesFile outputRunFile = do
+data ExportFormat = ExportQrels | ExportRun
+
+
+
+pageLevelRuns2Qrels :: ([PageId] -> TrecRunFile.QueryId -> SectionPath) -> FilePath -> FilePath -> ExportFormat -> IO ()
+pageLevelRuns2Qrels stringToSectionPath inputRunFile outputRunFile exportFormat = do
+    rankings <- readParagraphRun inputRunFile
+    let filteredRunScores :: [(Double, CAR.Annotation IsRelevant)]
+        filteredRunScores =
+            [ (carScore, CAR.Annotation sectionPath paragraphId Relevant)
+            |  CAR.RankingEntry{carRank=rank,carQueryId=qId, carDocument=paragraphId,..} <- rankings
+            , rank <= 50
+            , let sectionPath = stringToSectionPath [] $ unQueryId qId
+            ]
+
+
+    case exportFormat of
+        ExportQrels ->  writeParagraphQRel outputRunFile $ map snd filteredRunScores
+        ExportRun -> writeParagraphRun outputRunFile $ map annotationToParagraphRankingEntry filteredRunScores
+
+
+
+sectionLevelRuns2Qrels :: ([PageId] -> TrecRunFile.QueryId -> SectionPath) -> FilePath -> FilePath -> FilePath -> ExportFormat -> IO ()
+sectionLevelRuns2Qrels stringToSectionPath inputRunFile outlinesFile outputRunFile exportFormat = do
     outlines <- readOutlinesFile outlinesFile
     let titles =
             [ queryId
@@ -89,7 +103,7 @@ sectionLevelRuns2Qrels stringToSectionPath inputRunFile outlinesFile outputRunFi
             ]
     rankings <- readParagraphRun inputRunFile
     let aggregateQrel :: [(PageId, [(CAR.Annotation IsRelevant, Double)])]
-        aggregateQrel = 
+        aggregateQrel =
             [ ( titleQuery, [(annotation, 1.0/ realToFrac rank)])
             |  CAR.RankingEntry{carRank=rank ,carQueryId=qId, carDocument=paragraphId, ..} <- rankings
             , rank <= 50
@@ -97,16 +111,27 @@ sectionLevelRuns2Qrels stringToSectionPath inputRunFile outlinesFile outputRunFi
                   titlePath = SectionPath titleQuery []
             , let annotation = CAR.Annotation titlePath paragraphId Relevant
             ]
-        aggregatedQrelScores =
+        aggregatedRunScores =
             concat
             [ Ranking.toSortedList rankedQrels
                 | (_key, entryList) <-  HM.toList  $ HM.fromListWith (++) aggregateQrel
                 , let aggregateScores = HM.fromListWith (+) entryList
                 , let rankedQrels = Ranking.fromListK 50 $ fmap (\(a,b) -> (b,a)) $ HM.toList aggregateScores
             ]
-        
 
-    writeParagraphQRel outputRunFile $ map snd aggregatedQrelScores
+
+    case exportFormat of
+        ExportQrels ->  writeParagraphQRel outputRunFile $ map snd aggregatedRunScores
+        ExportRun -> writeParagraphRun outputRunFile $ map annotationToParagraphRankingEntry aggregatedRunScores
+
+annotationToParagraphRankingEntry :: (Double, CAR.Annotation IsRelevant) -> ParagraphRankingEntry
+annotationToParagraphRankingEntry (score, Annotation sectionPath paragraphId r) =
+    CAR.RankingEntry { carQueryId = QueryId $ T.pack $ escapeSectionPath $  sectionPath
+                    , carDocument    = paragraphId
+                    , carRank        = 1
+                    , carScore       = score
+                    , carMethodName  = MethodName $ T.pack "RankAggregation"
+                    }
 
 main :: IO ()
 main = join $ execParser' 1 (helper <*> mode) mempty
